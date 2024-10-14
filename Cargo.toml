@@ -13,7 +13,7 @@ keywords = ["AxiDraw"]
 [dependencies]
 serialport = "4.5.1"
 anyhow = "1.0.89"
-svg = "0.17.0"
+svg = "0.18.0"
 log = "0.4.17"
 env_logger = "0.11.5"
 thiserror = "1.0.40"
