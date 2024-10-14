@@ -1,0 +1,26 @@
+{
+  "rust": {
+    "formatter": {
+      "enabled": true,
+      "command": "cargo fmt"
+    },
+    "linter": {
+      "enabled": true,
+      "command": "cargo clippy"
+    }
+  },
+  "editor": {
+    "formatOnSave": true,
+    "tabSize": 2,
+    "lineNumbers": "on"
+  },
+  "languageServer": {
+    "rust-analyzer": {
+      "enabled": true,
+      "command": "rust-analyzer",
+      "rootPatterns": ["Cargo.toml"],
+      "filetypes": ["rust"],
+      "initializationOptions": {}
+    }
+  }
+}
