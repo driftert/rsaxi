@@ -1,7 +1,8 @@
 use crate::motion::util::corner_velocity;
 
 use super::{
-    block::Block, error::PlanError, segment::Segment, trapezoid::Trapezoid, triangle::Triangle,
+    block::Block, error::PlanError, instant::Instant, segment::Segment, trapezoid::Trapezoid,
+    triangle::Triangle,
 };
 use geo::Point;
 
@@ -198,6 +199,70 @@ impl Plan {
             total_distance: s,
             times: ts,
             distances: ss,
+        })
+    }
+
+    /// Повертає стан руху в певний момент часу.
+    ///
+    /// # Параметри:
+    /// - `t`: Час, що минув з початку руху.
+    ///
+    /// # Повертає:
+    /// - `Option<Instant>`: Структура `Instant`, якщо час знаходиться в межах плану, інакше `None`.
+    pub fn instant(&self, t: f64) -> Option<Instant> {
+        // Обмежуємо час до діапазону [0, total_time]
+        let clamped_t = t.clamp(0.0, self.total_time);
+
+        // Використовуємо бінарний пошук для знаходження першого індексу, де times[i] > clamped_t
+        let index = match self
+            .times
+            .binary_search_by(|&x| x.partial_cmp(&clamped_t).unwrap())
+        {
+            Ok(idx) => idx + 1,
+            Err(idx) => idx,
+        };
+
+        // Визначаємо індекс блоку
+        let block_index = if index == 0 { 0 } else { index - 1 };
+
+        // Отримуємо блок та обчислюємо Instant
+        self.blocks.get(block_index).map(|block| {
+            let t_in_block = clamped_t - self.times[block_index];
+            let dt = self.times[block_index];
+            let ds = self.distances[block_index];
+            block.instant(t_in_block, dt, ds)
+        })
+    }
+
+    /// Повертає стан руху на певній пройденій відстані.
+    ///
+    /// # Параметри:
+    /// - `s`: Пройдена відстань з початку руху.
+    ///
+    /// # Повертає:
+    /// - `Option<Instant>`: Структура `Instant`, якщо відстань знаходиться в межах плану, інакше `None`.
+    pub fn instant_at_distance(&self, s: f64) -> Option<Instant> {
+        // Обмежуємо відстань до діапазону [0, total_distance]
+        let clamped_s = s.clamp(0.0, self.total_distance);
+
+        // Використовуємо бінарний пошук для знаходження першого індексу, де distances[i] > clamped_s
+        let index = match self
+            .distances
+            .binary_search_by(|&x| x.partial_cmp(&clamped_s).unwrap())
+        {
+            Ok(idx) => idx + 1,
+            Err(idx) => idx,
+        };
+
+        // Визначаємо індекс блоку
+        let block_index = if index == 0 { 0 } else { index - 1 };
+
+        // Отримуємо блок та обчислюємо Instant
+        self.blocks.get(block_index).map(|block| {
+            let s_in_block = clamped_s - self.distances[block_index];
+            let dt = self.times[block_index];
+            let ds = self.distances[block_index];
+            block.instant_at_distance(s_in_block, dt, ds)
         })
     }
 }

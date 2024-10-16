@@ -3,15 +3,6 @@ use serialport::{available_ports, DataBits, Parity, SerialPort, SerialPortType, 
 use std::time::Duration;
 use thiserror::Error;
 
-// Константи для дефолтних значень позицій та швидкостей ручки
-const PEN_UP_POS: i32 = 60; // Максимальна позиція підйому ручки за замовчуванням
-const PEN_UP_SPEED: i32 = 150; // Швидкість підйому ручки за замовчуванням
-const PEN_UP_DELAY: i32 = 0;
-
-const PEN_DOWN_POS: i32 = 40; // Мінімальна позиція опускання ручки за замовчуванням
-const PEN_DOWN_SPEED: i32 = 150; // Швидкість опускання ручки за замовчуванням
-const PEN_DOWN_DELAY: i32 = 0;
-
 /// Тип для обробки помилок, які можуть виникнути під час роботи з пристроєм
 #[derive(Error, Debug)]
 pub enum DeviceError {
@@ -47,6 +38,18 @@ pub struct MotorStatus {
     pub fifo_empty: bool,        // Чи FIFO порожня
 }
 
+/// Структура для налаштувань пристрою, які приймаються в конструкторі `Device`
+pub struct DeviceOptions {
+    pub pen_up_position: i32,      // Положення ручки при піднятій ручці.
+    pub pen_down_position: i32,    // Положення ручки при опущеній ручці.
+    pub pen_up_speed: i32,         // Швидкість підняття механізму ручки.
+    pub pen_down_speed: i32,       // Швидкість опускання механізму ручки.
+    pub pen_up_delay: i32,         // Затримка після підняття ручки (в мілісекундах).
+    pub pen_down_delay: i32,       // Затримка після опускання ручки (в мілісекундах).
+    pub step_mode: StepMode,       // Режим кроку для моторів.
+    pub port_name: Option<String>, // Назва порту для підключення (опціонально).
+}
+
 /// Структура Device для керування підключенням до пристрою через серійний порт
 /// Ця структура дозволяє керувати різними аспектами пристрою, включаючи серійний зв'язок
 /// та глобальні налаштування для управління положенням і швидкістю руху ручки.
@@ -72,34 +75,42 @@ pub struct Device {
 }
 
 impl Device {
-    /// Конструктор для створення екземпляра `Device`, що автоматично підключається до знайденого порту
+    /// Конструктор для створення екземпляра `Device`, що приймає `DeviceOptions`
     ///
-    /// Викликає методи для пошуку доступного порту та підключення до нього.
-    /// Також виконує конфігурацію глобальних налаштувань для керування ручкою.
+    /// Використовує `DeviceOptions` для налаштування пристрою, але не зберігає його як частину структури.
+    ///
+    /// # Параметри:
+    /// - `options`: Параметри налаштування пристрою `DeviceOptions`.
     ///
     /// # Повертає:
     /// - `Result<Self, DeviceError>`: Повертає екземпляр структури Device або помилку в разі невдачі.
-    pub fn new() -> Result<Self, DeviceError> {
-        let port_name = Device::find_port()?; // Пошук порту для підключення
+    pub fn new(options: DeviceOptions) -> Result<Self, DeviceError> {
+        // Використовуємо вказаний порт або знаходимо порт автоматично
+        let port_name = if let Some(ref port) = options.port_name {
+            port.clone()
+        } else {
+            Device::find_port()?
+        };
+
         let port = Device::connect(&port_name)?; // Підключення до знайденого порту
 
-        // Створення нового екземпляра `Device` з налаштуванням конфігурації для управління ручкою
+        // Створення нового екземпляра `Device` з параметрами з `DeviceOptions`
         let mut device = Self {
             port,
             connected: true,
-            pen_up_position: PEN_UP_POS,
-            pen_up_speed: PEN_UP_SPEED,
-            pen_up_delay: PEN_UP_DELAY,
-            pen_down_position: PEN_DOWN_POS,
-            pen_down_speed: PEN_DOWN_SPEED,
-            pen_down_delay: PEN_DOWN_DELAY,
+            pen_up_position: options.pen_up_position,
+            pen_up_speed: options.pen_up_speed,
+            pen_up_delay: options.pen_up_delay,
+            pen_down_position: options.pen_down_position,
+            pen_down_speed: options.pen_down_speed,
+            pen_down_delay: options.pen_down_delay,
             is_lowered: false,
-            step_mode: StepMode::OneSixteenth,
+            step_mode: options.step_mode,
             motor1_enabled: false,
             motor2_enabled: false,
         };
 
-        // Виклик методу для налаштування пристрою з використанням глобальних параметрів
+        // Виконуємо конфігурацію пристрою з використанням параметрів з `DeviceOptions`
         device.configure()?;
         device.is_lowered = device.query_pen_state()?;
 
