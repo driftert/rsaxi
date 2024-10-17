@@ -1,7 +1,7 @@
 use anyhow::Result;
+use axidraw::{AxiDrawModel, Axidraw, Options};
 use env_logger::Env;
-use font::{script::Script, variant::Simplex};
-use geo::Point;
+use geo::{MultiLineString, Point};
 
 // Імпортуємо модулі
 mod axidraw;
@@ -12,43 +12,44 @@ mod motion;
 mod text;
 
 // Імпортуємо необхідні компоненти з модулів
-use drawing::{Drawable, Drawing};
-use text::Text;
+use drawing::Drawing;
 
 fn main() -> Result<()> {
-    // Ініціалізуємо логер з налаштуваннями за замовчуванням (рівень info)
+    // Ініціалізація логування з рівнем за замовчуванням "info"
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
-    // Крок 1: Ініціалізуємо Roman шрифт
-    log::info!("Ініціалізація Roman шрифту...");
-    let roman = Script::new();
+    // Налаштування опцій Axidraw з вибраною моделлю
+    let options = Options {
+        model: AxiDrawModel::Mini,
+        ..Options::default()
+    };
 
-    // Крок 2: Створюємо Plain варіант Roman шрифту
-    log::info!("Створення Plain варіанту Roman шрифту...");
-    let simplex_font = roman.simplex()?;
+    // Ініціалізація Axidraw з вказаними опціями
+    let mut axidraw = Axidraw::new(options)?;
 
-    // Крок 3: Створюємо екземпляр Text за допомогою TextBuilder
-    log::info!("Створення об'єкта Text...");
-    let text = Text::builder()
-        .content("Hershey")
-        .font(simplex_font)
-        .position(Point::new(50.0, 50.0)) // Початкова позиція (x=50.0, y=50.0)
-        .scale(1.0) // Масштаб
-        .build()?;
+    // Отримання розмірів моделі
+    let model_width = axidraw.options.model.width();
+    let model_height = axidraw.options.model.height();
 
-    // Крок 4: Ініціалізуємо новий Drawing з відповідними межами
-    let bounds = (300.0, 200.0); // Приклад меж (ширина, висота)
-    let mut drawing = Drawing::new(bounds, text.draw()?);
+    // Визначення меж малюнка на основі розмірів моделі з додаванням відступів
+    let margin = 10.0; // Відступ у мм
+    let drawing_bounds = (model_width - 2.0 * margin, model_height - 2.0 * margin);
 
-    // Крок 6: Конвертуємо Drawing у SVG
-    log::info!("Конвертація Drawing у SVG...");
-    let svg_content = drawing.to_svg();
+    // Створення квадратного малюнка в межах робочої області
+    let square = Drawing::new(
+        drawing_bounds, // Межі: ширина і висота в мм
+        MultiLineString(vec![vec![
+            Point::new(margin, margin),
+            Point::new(margin, drawing_bounds.1 - margin),
+            Point::new(drawing_bounds.0 - margin, drawing_bounds.1 - margin),
+            Point::new(drawing_bounds.0 - margin, margin),
+            Point::new(margin, margin),
+        ]
+        .into()]),
+    );
 
-    // Крок 7: Записуємо SVG контент у файл
-    log::info!("Запис SVG у файл 'output.svg'...");
-    std::fs::write("output.svg", svg_content)?;
-
-    log::info!("Файл SVG 'output.svg' успішно створено.");
+    // Виконання малювання
+    axidraw.draw(&square)?;
 
     Ok(())
 }

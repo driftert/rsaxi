@@ -1,9 +1,11 @@
 use std::time::Duration;
 
 use geo::Point;
+use log::debug;
 
 use crate::device::{Device, DeviceError, DeviceOptions, StepMode};
 use crate::drawing::Drawing;
+use crate::motion::block::Block;
 use crate::motion::plan::Plan;
 
 /// Константи для налаштування AxiDraw.
@@ -32,7 +34,6 @@ pub struct Options {
     pub pen_rate_raise: i32, // Швидкість підняття механізму підйому ручки.
     pub pen_delay_down: i32, // Затримка після опускання ручки (в мілісекундах).
     pub pen_delay_up: i32,   // Затримка після підняття ручки (в мілісекундах).
-    pub const_speed: bool,   // Опція: Використовувати постійну швидкість при опущеній ручці.
     pub model: AxiDrawModel, // Вибір моделі апаратного забезпечення AxiDraw.
     pub port: Option<String>, // Вказати USB-порт або AxiDraw для використання.
     pub port_config: Option<String>, // Перевизначити спосіб знаходження USB-портів.
@@ -50,7 +51,6 @@ impl Default for Options {
             pen_rate_raise: PEN_UP_SPEED, // Швидкість підняття серво
             pen_delay_down: PEN_DOWN_DELAY, // Затримка після опускання ручки
             pen_delay_up: PEN_UP_DELAY,   // Затримка після підняття ручки
-            const_speed: false,           // Використовувати постійну швидкість
             model: AxiDrawModel::Mini,    // Модель AxiDraw за замовчуванням
             port: None,                   // Автоматичний вибір порту
             port_config: None,            // Стандартна конфігурація порту
@@ -182,7 +182,7 @@ impl Axidraw {
             }
 
             for block in &plan.blocks {
-                todo!()
+                self.execute_block(block)?;
             }
 
             // Піднімаємо ручку після завершення шляху
@@ -197,6 +197,46 @@ impl Axidraw {
         // Завершення малювання
         self.move_to(0.0, 0.0, self.options.speed_penup)?;
         self.device.disable_motors()?;
+
+        Ok(())
+    }
+
+    /// Виконує один блок руху, обчислюючи необхідні кроки та надсилаючи команди до пристрою.
+    ///
+    /// # Параметри
+    /// - `block`: Блок руху, який потрібно виконати.
+    ///
+    /// # Повертає
+    /// - `Result<(), DeviceError>`: `Ok(())` у разі успішного виконання або `DeviceError` у разі помилки.
+    pub fn execute_block(&mut self, block: &Block) -> Result<(), DeviceError> {
+        // Обчислюємо різницю в позиціях (дельта) у міліметрах
+        let delta_x_mm = block.p2.x() - block.p1.x();
+        let delta_y_mm = block.p2.y() - block.p1.y();
+
+        // Конвертуємо дельту з міліметрів у кроки, округлюючи до найближчого цілого числа
+        let delta_x_steps = (delta_x_mm * STEPS_PER_MM).round() as i32;
+        let delta_y_steps = (delta_y_mm * STEPS_PER_MM).round() as i32;
+
+        // Конвертуємо тривалість блоку з секунд у мілісекунди, округлюючи до найближчого цілого числа
+        let duration_ms = (block.duration * 1000.0).round() as u64;
+
+        // Якщо немає кроків для переміщення по обидвом осям, пропускаємо відправку команди
+        if delta_x_steps == 0 && delta_y_steps == 0 {
+            return Ok(());
+        }
+
+        // Створюємо об'єкт Duration з мілісекунд
+        let duration = Duration::from_millis(duration_ms);
+
+        // Надсилаємо команду руху до пристрою, передаючи тривалість та кількість кроків для кожної осі
+        self.device
+            .stepper_move(duration, delta_x_steps, Some(delta_y_steps))?;
+
+        // Логуємо деталі виконаного блоку для налагодження
+        debug!(
+            "Виконано блок: Тривалість={}мс, Кроки=({}, {})",
+            duration_ms, delta_x_steps, delta_y_steps
+        );
 
         Ok(())
     }
