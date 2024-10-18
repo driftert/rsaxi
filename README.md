@@ -1,23 +1,112 @@
-# AxiDraw Rust Controller
+# Контролер AxiDraw на Rust
 
-## Overview
+## Огляд
 
-A Rust-based controller for the AxiDraw drawing machine, supporting text rendering with Hershey fonts and SVG export.
+Rust-контролер для машини малювання AxiDraw з підтримкою рендерингу тексту за допомогою шрифтів Hershey та експорту в SVG.
 
-## Features
+## Можливості
 
-- Control pen movements and motors via serial communication.
-- Render text using scalable Hershey fonts.
-- Export drawings as SVG files.
-- Support for multiple AxiDraw models.
+- Керування рухом ручки та моторами через послідовну комунікацію.
+- Рендеринг тексту з використанням масштабованих шрифтів Hershey.
+- Експорт малюнків у формат SVG.
+- Підтримка кількох моделей AxiDraw.
 
-## Installation
+## Встановлення
 
-1. **Prerequisites**:
-   - Rust (stable)
-   - AxiDraw device connected via USB
+1. **Передумови**:
+   - Встановлений Rust (стабільна версія)
+   - Пристрій AxiDraw, підключений через USB
 
-2. **Clone the Repository**:
+2. **Клонування репозиторію**:
    ```bash
-   git clone https://github.com/tkoval83/axi.git
-   cd axi
+   git clone https://github.com/driftert/rsaxi.git
+   cd rsaxi
+   ```
+
+3. **Збірка проекту**:
+   ```bash
+   cargo build --release
+   ```
+
+4. **Запуск**:
+   Після успішної збірки, ви можете запустити програму за допомогою:
+   ```bash
+   cargo run
+   ```
+
+## Використання
+
+### Основні Команди
+
+- **Запуск пристрою**: Підключіть AxiDraw через USB, переконайтесь, що порт визначений правильно. Використовуйте команду для запуску:
+   ```bash
+   ./rsaxi --port /dev/ttyUSB0
+   ```
+
+- **Рендеринг тексту**: Ви можете рендерити текст за допомогою шрифтів Hershey, використовуючи команду:
+   ```bash
+   ./rsaxi --text "Привіт, світ!"
+   ```
+
+### Приклад Виконання Команди
+
+```bash
+./axi --text "Hello, AxiDraw!" --font hershey --output output.svg
+```
+
+Ця команда згенерує SVG-файл з текстом "Hello, AxiDraw!" з використанням шрифтів Hershey та збереже його у файл `output.svg`.
+
+## Підтримка Моделей AxiDraw
+
+Контролер підтримує кілька моделей AxiDraw. Для того щоб вибрати модель, використовуйте параметр `--model`:
+   - `V3`: AxiDraw V3
+   - `V3A3`: AxiDraw V3/A3
+   - `SEA3`: AxiDraw SE/A3
+   - `Mini`: AxiDraw Mini
+
+Приклад:
+```bash
+./rsaxi --model V3 --text "AxiDraw V3 Model"
+```
+
+## Налаштування
+
+Конфігурація контролера AxiDraw може бути змінена через параметри командного рядка або конфігураційний файл.
+
+### Параметри Командного Рядка
+
+- `--port`: Вказати USB-порт для підключення AxiDraw.
+- `--speed-pendown`: Встановити швидкість руху з опущеною ручкою (мм/с).
+- `--speed-penup`: Встановити швидкість переміщення без малювання (мм/с).
+- `--accel`: Встановити прискорення (відносне значення).
+- `--pen-pos-down`: Положення ручки при малюванні.
+- `--pen-pos-up`: Положення ручки при переміщенні.
+- `--pen-rate-lower`: Швидкість опускання ручки.
+- `--pen-rate-raise`: Швидкість піднімання ручки.
+
+### Конфігураційний Файл
+
+Також ви можете використовувати конфігураційний файл для налаштувань. Приклад:
+```toml
+speed_pendown = 40.0
+speed_penup = 150.0
+accel = 1.0
+pen_pos_down = 30
+pen_pos_up = 60
+pen_rate_lower = 150
+pen_rate_raise = 150
+pen_delay_down = 0
+pen_delay_up = 0
+```
+
+## Підтримка та Внесок
+
+Будь ласка, надсилайте повідомлення про помилки та пропозиції через [GitHub Issues](https://github.com/tkoval83/axi/issues). Ви також можете зробити свій внесок, відправивши pull request.
+
+## Ліцензія
+
+Цей проект ліцензовано під ліцензією MIT. Для отримання додаткової інформації дивіться файл `LICENSE`.
+
+## Автори
+
+Цей проект підтримується та розробляється спільнотою розробників на [GitHub](https://github.com/driftert/rsaxi.git).
