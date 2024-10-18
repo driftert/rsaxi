@@ -159,8 +159,6 @@ impl Axidraw {
 
             let plan = Plan::new(
                 points.clone(),
-                None,          // Початкові швидкості
-                None,          // Максимальні швидкості
                 acceleration,  // Прискорення
                 max_velocity,  // Максимальна швидкість
                 CORNER_FACTOR, // Коефіцієнт для кутів
