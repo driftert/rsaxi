@@ -1,3 +1,5 @@
+use std::fmt;
+
 use geo::Point;
 
 /// Структура представляє стан руху в певний момент часу.
@@ -33,5 +35,20 @@ impl Instant {
             acceleration,
             position,
         }
+    }
+}
+
+impl fmt::Display for Instant {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Момент {{ час: {:.2}, пройдена відстань: {:.2}, швидкість: {:.2}, прискорення: {:.2}, позиція: ({:.2}, {:.2}) }}",
+            self.time_elapsed,
+            self.distance_traveled,
+            self.velocity,
+            self.acceleration,
+            self.position.x(),
+            self.position.y()
+        )
     }
 }

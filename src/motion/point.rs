@@ -14,6 +14,16 @@ pub trait PointExtension {
     /// - `point`: Інша точка, до якої потрібно обчислити відстань.
     fn distance(&self, point: &Point<f64>) -> f64;
 
+    /// Множить координати точки на скалярне значення.
+    ///
+    /// # Параметри
+    /// - `b`: Скаляр, на який множаться координати точки.
+    ///
+    /// # Повертає
+    /// Нову точку, координати якої пропорційні початковим координатам,
+    /// але збільшені або зменшені на скалярний множник.
+    fn mul_scalar(&self, b: f64) -> Point<f64>;
+
     /// Нормалізує точку (вектор), приводячи її до одиничної довжини.
     ///
     /// # Повертає
@@ -37,16 +47,20 @@ impl PointExtension for Point<f64> {
         f64::hypot(self.x() - other.x(), self.y() - other.y())
     }
 
+    fn mul_scalar(&self, b: f64) -> Point<f64> {
+        Point::new(self.x() * b, self.y() * b)
+    }
+
     fn normalize(&self) -> Point<f64> {
         let d = self.length();
         if d == 0.0 {
             return Point::new(0.0, 0.0);
         }
-        *self / d
+        self.mul_scalar(1.0 / d)
     }
 
     fn lerps(&self, other: &Point<f64>, s: f64) -> Point<f64> {
         let v = (*other - *self).normalize();
-        *self + v * s
+        *self + v.mul_scalar(s)
     }
 }

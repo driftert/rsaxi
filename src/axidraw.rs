@@ -138,7 +138,7 @@ impl Axidraw {
     pub fn draw(&mut self, drawing: &Drawing) -> Result<(), anyhow::Error> {
         // Ініціалізація пристрою
         self.device.enable_motors(StepMode::OneSixteenth)?;
-        // self.device.zero_position()?;
+        self.device.zero_position()?;
 
         // Ітерація по кожному шляху в малюнку
         for line_string in &drawing.paths.0 {

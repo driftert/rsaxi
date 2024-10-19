@@ -1,3 +1,5 @@
+use std::fmt;
+
 use geo::Point;
 
 use super::{instant::Instant, point::PointExtension};
@@ -56,7 +58,7 @@ impl Block {
         let v = self.initial_velocity + a * clamped_t;
         let s = self.initial_velocity * clamped_t + 0.5 * a * clamped_t * clamped_t;
         let clamped_s = s.clamp(0.0, self.distance);
-        let position = self.p1.lerps(&self.p2, clamped_s / self.distance);
+        let position = self.p1.lerps(&self.p2, clamped_s);
         Instant::new(clamped_t + dt, clamped_s + ds, v, a, position)
     }
 
@@ -90,5 +92,22 @@ impl Block {
 
         // Повертаємо стан на обчисленому часі t
         self.instant(t, dt, ds)
+    }
+}
+
+impl fmt::Display for Block {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Блок руху:\n  Прискорення: {}\n  Тривалість: {}\n  Початкова швидкість: {}\n  Відстань: {}\n  Початкова точка: ({}, {})\n  Кінцева точка: ({}, {})",
+            self.acceleration,
+            self.duration,
+            self.initial_velocity,
+            self.distance,
+            self.p1.x(),
+            self.p1.y(),
+            self.p2.x(),
+            self.p2.y(),
+        )
     }
 }

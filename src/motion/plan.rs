@@ -1,3 +1,5 @@
+use std::f64::EPSILON;
+
 use super::{
     block::Block, error::PlanError, instant::Instant, point::PointExtension, segment::Segment,
     trapezoid::Trapezoid, triangle::Triangle,
@@ -32,8 +34,6 @@ impl Plan {
         max_velocity: f64,
         corner_factor: f64,
     ) -> Result<Self, PlanError> {
-        const EPSILON: f64 = 1e-9;
-
         // Крок 1: Видалення дублікатів точок
         let deduped_points = Self::dedup_points(points, EPSILON);
 

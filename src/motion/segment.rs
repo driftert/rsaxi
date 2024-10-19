@@ -1,3 +1,5 @@
+use std::fmt;
+
 use geo::Point;
 
 use super::{block::Block, point::PointExtension};
@@ -39,5 +41,21 @@ impl Segment {
             entry_velocity: 0.0,
             blocks: vec![],
         }
+    }
+}
+
+impl fmt::Display for Segment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Сегмент:\n  Початкова точка: ({:.2}, {:.2})\n  Кінцева точка: ({:.2}, {:.2})\n  Довжина: {:.2}\n  Напрямний вектор: ({:.2}, {:.2})\n  Максимальна вхідна швидкість: {:.2}\n  Початкова швидкість входу: {:.2}\n  Кількість блоків: {}",
+            self.p1.x(), self.p1.y(),
+            self.p2.x(), self.p2.y(),
+            self.length,
+            self.vector.x(), self.vector.y(),
+            self.max_entry_velocity,
+            self.entry_velocity,
+            self.blocks.len()
+        )
     }
 }
