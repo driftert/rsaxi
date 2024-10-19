@@ -274,8 +274,8 @@ impl Axidraw {
         );
 
         // Надсилаємо команду руху до пристрою, передаючи тривалість та кількість кроків для кожної осі
-        // self.device
-        //     .stepper_move(duration, delta_x_steps, Some(delta_y_steps))?;
+        self.device
+            .stepper_move(duration, delta_x_steps, Some(delta_y_steps))?;
 
         // Логуємо деталі виконаного блоку для налагодження
         debug!(
