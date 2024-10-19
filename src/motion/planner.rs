@@ -35,6 +35,8 @@ impl Planner {
     pub fn plan(&self, points: Vec<Point<f64>>) -> Result<Plan, PlanError> {
         Plan::new(
             points,
+            vec![],
+            vec![],
             self.acceleration,
             self.max_velocity,
             self.corner_factor,

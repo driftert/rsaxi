@@ -1,80 +1,103 @@
-use std::f64::EPSILON;
-
 use super::{
-    block::Block, error::PlanError, instant::Instant, point::PointExtension, segment::Segment,
-    trapezoid::Trapezoid, triangle::Triangle,
+    block::Block, error::PlanError, instant::Instant, segment::Segment, trapezoid::Trapezoid,
+    triangle::Triangle,
 };
 use crate::motion::util::corner_velocity;
 use geo::Point;
+use log::{debug, info};
+use std::{f64::EPSILON, fmt}; // Додаємо обидва рівні логування
 
-/// Структура `Plan` представляє план руху, що складається з блоків.
-/// Вона включає час, пройдену відстань, блоки та масиви часу і відстані для кожного блоку.
+/// Структура `Plan` представляє план руху, що складається з кількох сегментів (блоків).
+/// Кожен блок містить інформацію про час та пройдену відстань на цьому етапі.
+/// Вся траєкторія розбивається на сегменти, кожен з яких описує прискорення,
+/// максимальну швидкість та інші параметри руху.
 pub struct Plan {
-    pub blocks: Vec<Block>,  // Блоки руху
+    pub blocks: Vec<Block>,  // Масив блоків руху, що складають план
     pub total_time: f64,     // Загальний час руху
-    pub total_distance: f64, // Загальна пройдена відстань
-    pub times: Vec<f64>,     // Час кожного блоку
-    pub distances: Vec<f64>, // Відстань для кожного блоку
+    pub total_distance: f64, // Загальна відстань руху
+    pub times: Vec<f64>,     // Масив часових міток для кожного блоку
+    pub distances: Vec<f64>, // Масив відстаней для кожного блоку
 }
 
 impl Plan {
-    /// Створює новий план руху на основі точок, прискорення, максимальної швидкості та коефіцієнта повороту.
+    /// Створює новий план руху на основі послідовності точок (шляху),
+    /// значень прискорення, максимальної швидкості та коефіцієнта повороту.
     ///
-    /// # Параметри:
-    /// - `points`: Вектор точок `Point<f64>`, що визначає шлях руху.
-    /// - `acceleration`: Прискорення для сегментів руху.
-    /// - `max_velocity`: Максимальна швидкість для кожного сегмента.
-    /// - `corner_factor`: Коефіцієнт повороту (corner factor), що враховує зміну швидкості на кутах.
+    /// # Аргументи:
+    /// - `points`: Вектор координат точок `Point<f64>`, через які проходить траєкторія.
+    /// - `vs`: Вектор швидкостей в кожній точці.
+    /// - `vmaxs`: Вектор максимальних швидкостей для кожного сегмента (може бути порожнім).
+    /// - `a`: Прискорення руху.
+    /// - `vmax`: Максимально допустима швидкість.
+    /// - `cf`: Коефіцієнт для корекції швидкості на поворотах.
     ///
     /// # Повертає:
-    /// - `Result<Self, PlanError>`: Створений `Plan` або помилка.
+    /// - `Result<Self, PlanError>`: Успішно створений план або помилка `PlanError`.
     pub fn new(
-        points: Vec<Point<f64>>,
-        acceleration: f64,
-        max_velocity: f64,
-        corner_factor: f64,
+        points: Vec<Point>,
+        vs: Vec<f64>,
+        mut vmaxs: Vec<f64>,
+        a: f64,
+        vmax: f64,
+        cf: f64,
     ) -> Result<Self, PlanError> {
-        // Крок 1: Видалення дублікатів точок
-        let deduped_points = Self::dedup_points(points, EPSILON);
+        let mut segments = Vec::new();
+        info!("Початок створення сегментів руху для траєкторії.");
+        debug!("Точки маршруту: {:?}, Прискорення: {}, Максимальна швидкість: {}, Коефіцієнт повороту: {}", points, a, vmax, cf);
 
-        // Крок 2: Обробка випадку з одною точкою
-        if deduped_points.len() == 1 {
-            let single_point = deduped_points[0];
-            let block = Block::new(0.0, 0.0, 0.0, single_point, single_point);
-            return Ok(Self {
-                blocks: vec![block],
-                total_time: 0.0,
-                total_distance: 0.0,
-                times: vec![0.0],
-                distances: vec![0.0],
-            });
+        // Створюємо сегменти між сусідніми точками
+        for i in 1..points.len() {
+            let segment = Segment::new(points[i - 1].clone(), points[i].clone());
+            if segment.length > EPSILON {
+                info!(
+                    "Додано сегмент довжиною {:.2} мм між точками {:?}",
+                    segment.length,
+                    (points[i - 1], points[i])
+                );
+                debug!("Сегмент {} має довжину: {:.2}", i, segment.length);
+                segments.push(segment);
+            }
         }
 
-        // Крок 3: Створення сегментів
-        let mut segments: Vec<Segment> = deduped_points
-            .windows(2)
-            .map(|pair| Segment::new(pair[0], pair[1]))
-            .collect();
+        // Остання точка для завершення траєкторії
+        let last_point = points[points.len() - 1].clone();
+        segments.push(Segment::new(last_point.clone(), last_point.clone()));
+        info!("Додано останній сегмент для завершення траєкторії.");
+        debug!("Кількість сегментів: {}", segments.len());
 
-        // Крок 4: Обчислення максимальних вхідних швидкостей для кутів
-        for i in 1..segments.len() {
-            let (prev_segments, current_segments) = segments.split_at_mut(i);
-            let prev_segment = &prev_segments[i - 1];
-            let current_segment = &mut current_segments[0];
-
-            // Обчислюємо максимальну вхідну швидкість тільки коли це потрібно
-            current_segment.max_entry_velocity = corner_velocity(
-                prev_segment,
-                current_segment,
-                max_velocity,
-                acceleration,
-                corner_factor,
-            );
+        // Якщо vmaxs порожній, заповнюємо його значенням vmax для кожної точки
+        if vmaxs.is_empty() {
+            vmaxs = vec![vmax; points.len()];
+            info!("Використано максимальну швидкість за замовчуванням для всіх точок.");
+        } else if vmaxs.len() != points.len() {
+            panic!("Масив максимальних швидкостей має бути порожнім або такого ж розміру, як масив точок.");
         }
 
-        // Крок 5: Додавання дампінгового сегмента для кінцевої точки
-        let last_point = deduped_points.last().unwrap().clone();
-        segments.push(Segment::new(last_point, last_point));
+        // Заповнення вектору вхідних швидкостей для сегментів
+        if vs.is_empty() {
+            segments[0].max_entry_velocity = vmaxs[0];
+            for i in 1..segments.len() - 1 {
+                let (left, right) = segments.split_at_mut(i);
+                let s1 = &left[i - 1];
+                let s2 = &mut right[0];
+                s2.max_entry_velocity = corner_velocity(s1, s2, vmaxs[i], a, cf);
+                info!("Розраховано вхідну швидкість для сегмента {} з урахуванням коефіцієнта повороту.", i);
+                debug!(
+                    "Вхідна швидкість для сегменту {} з vmax: {}, прискоренням: {}, коефіцієнтом повороту: {} дорівнює {}",
+                    i, vmaxs[i], a, cf, s2.max_entry_velocity
+                );
+            }
+        } else if vs.len() == points.len() {
+            for i in 0..vs.len() {
+                segments[i].max_entry_velocity = vs[i].min(vmaxs[i]);
+                debug!(
+                    "Встановлено max_entry_velocity для сегмента {} = {}",
+                    i, segments[i].max_entry_velocity
+                );
+            }
+        } else {
+            panic!("Масив швидкостей має бути або порожнім, або того ж розміру, що і масив точок.");
+        }
 
         // Використовуємо isize для дозволу від'ємних значень при backtracking
         let mut i: isize = 0;
@@ -96,58 +119,61 @@ impl Plan {
             let mut block_list: Vec<Block> = Vec::new();
 
             // Визначення профілю руху: трикутний або трапецідальний
-            let m = Triangle::triangular_profile(s, vi, vexit, acceleration, p1, p2);
+            let m = Triangle::triangular_profile(s, vi, vexit, a, p1, p2);
 
             if m.s1 < -EPSILON {
-                // Сегмент занадто швидкий! Оновлюємо max_entry_velocity і backtrack
-                left[current_index].max_entry_velocity =
-                    (vexit.powi(2) + 2.0 * acceleration * s).sqrt();
-
-                if i > 0 {
-                    i -= 1;
-                } else {
-                    // Неможливо відкотитися далі; вийти з циклу
-                    break;
-                }
-                continue;
+                info!("Швидкість для сегменту {} перевищує допустиму. Проводиться зменшення швидкості.", current_index);
+                left[current_index].max_entry_velocity = (vexit.powi(2) + 2.0 * a * s).sqrt();
+                i -= 1;
+                debug!(
+                    "Повернення до сегменту {}: зменшено max_entry_velocity до {}",
+                    current_index, left[current_index].max_entry_velocity
+                );
             } else if m.s2 <= 0.0 {
-                // Прискорення без декреселерації
-                let vf = (vi.powi(2) + 2.0 * acceleration * s).sqrt();
-                let t = (vf - vi) / acceleration;
-                let block = Block::new(acceleration, t, vi, p1, p2);
+                info!(
+                    "Сегмент {}: профіль прискорення без гальмування.",
+                    current_index
+                );
+                let vf = (vi.powi(2) + 2.0 * a * s).sqrt();
+                let t = (vf - vi) / a;
+                let block = Block::new(a, t, vi, p1, p2);
                 block_list.push(block);
-                // Оновлюємо entry_velocity наступного сегмента
                 next_segment.entry_velocity = vf;
                 i += 1;
-            } else if m.vmax > vmax_segment + EPSILON {
-                // Трапецідальний профіль: прискорення, круїз, декреселерація
-                let z = Trapezoid::trapezoidal_profile(
-                    s,
-                    vi,
-                    vmax_segment,
-                    vexit,
-                    acceleration,
-                    p1,
-                    p2,
+                debug!(
+                    "Сегмент {}: vf = {}, вхідна швидкість наступного сегменту = {}",
+                    current_index, vf, next_segment.entry_velocity
                 );
-                let block1 = Block::new(acceleration, z.t1, vi, z.p1, z.p2);
+            } else if m.vmax > vmax_segment + EPSILON {
+                info!("Сегмент {}: профіль трапеціїдального типу.", current_index);
+                let z = Trapezoid::trapezoidal_profile(s, vi, vmax_segment, vexit, a, p1, p2);
+                let block1 = Block::new(a, z.t1, vi, z.p1, z.p2);
                 let block2 = Block::new(0.0, z.t2, vmax_segment, z.p2, z.p3);
-                let block3 = Block::new(-acceleration, z.t3, vmax_segment, z.p3, z.p4);
+                let block3 = Block::new(-a, z.t3, vmax_segment, z.p3, z.p4);
                 block_list.push(block1);
                 block_list.push(block2);
                 block_list.push(block3);
-                // Оновлюємо entry_velocity наступного сегмента
                 next_segment.entry_velocity = vexit;
                 i += 1;
+                debug!(
+                    "Сегмент {}: трапецідальний профіль, вхідна швидкість наступного сегменту = {}",
+                    current_index, next_segment.entry_velocity
+                );
             } else {
-                // Комбіноване прискорення та декреселерація
-                let block1 = Block::new(acceleration, m.t1, vi, m.p1, m.p2);
-                let block2 = Block::new(-acceleration, m.t2, m.vmax, m.p2, m.p3);
+                info!(
+                    "Сегмент {}: комбінований профіль прискорення та гальмування.",
+                    current_index
+                );
+                let block1 = Block::new(a, m.t1, vi, m.p1, m.p2);
+                let block2 = Block::new(-a, m.t2, m.vmax, m.p2, m.p3);
                 block_list.push(block1);
                 block_list.push(block2);
-                // Оновлюємо entry_velocity наступного сегмента
                 next_segment.entry_velocity = vexit;
                 i += 1;
+                debug!(
+                    "Сегмент {}: комбінований профіль, вхідна швидкість наступного сегменту = {}",
+                    current_index, next_segment.entry_velocity
+                );
             }
 
             // Присвоєння блоків сегменту
@@ -177,6 +203,17 @@ impl Plan {
             s += block.distance;
         }
 
+        info!(
+            "План руху успішно створений. Загальний час: {:.2} секунд, загальна відстань: {:.2} мм",
+            t, s
+        );
+        debug!(
+            "Загальна кількість блоків: {}, загальний час: {:.2}, загальна відстань: {:.2}",
+            all_blocks.len(),
+            t,
+            s
+        );
+
         Ok(Self {
             blocks: all_blocks,
             total_time: t,
@@ -184,33 +221,6 @@ impl Plan {
             times: ts,
             distances: ss,
         })
-    }
-
-    /// Видаляє послідовні дублікатні точки, які знаходяться в межах заданого порогу epsilon.
-    ///
-    /// # Параметри:
-    /// - `points`: Вектор точок для видалення дублікатів.
-    /// - `epsilon`: Мінімальна відстань між точками, щоб вважати їх різними.
-    ///
-    /// # Повертає:
-    /// - `Vec<Point<f64>>`: Вектор точок без послідовних дублікатів.
-    fn dedup_points(points: Vec<Point<f64>>, epsilon: f64) -> Vec<Point<f64>> {
-        if points.is_empty() {
-            return Vec::new();
-        }
-
-        let mut deduped = Vec::new();
-        deduped.push(points[0].clone());
-
-        for point in points.iter().skip(1) {
-            let last = deduped.last().unwrap();
-            let distance = last.distance(point);
-            if distance > epsilon {
-                deduped.push(point.clone());
-            }
-        }
-
-        deduped
     }
 
     /// Повертає стан руху в певний момент часу.
@@ -281,5 +291,20 @@ impl Plan {
             let ds = self.distances[block_index];
             block.instant_at_distance(s_in_block, dt, ds)
         })
+    }
+}
+
+impl fmt::Display for Plan {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "План:")?;
+        writeln!(f, "  Загальний час: {:.2} секунд", self.total_time)?;
+        writeln!(f, "  Загальна відстань: {:.2} мм", self.total_distance)?;
+        writeln!(f, "  Кількість блоків: {}", self.blocks.len())?;
+
+        for (_, block) in self.blocks.iter().enumerate() {
+            writeln!(f, "{}", block)?;
+        }
+
+        Ok(())
     }
 }
