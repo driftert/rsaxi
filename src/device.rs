@@ -292,7 +292,7 @@ impl Device {
             ));
         }
 
-        info!("Відправлення команди: {}", full_cmd.trim_end());
+        debug!("Відправлення команди: {}", full_cmd.trim_end());
         self.port.write_all(full_cmd.as_bytes()).map_err(|e| {
             DeviceError::CommandError(format!("Помилка відправлення команди: {}", e))
         })?;
@@ -807,9 +807,8 @@ impl Device {
             format!("SM,{},{}", duration_ms, axis_steps1)
         };
 
-        debug!("Відправлення команди: {}", cmd);
         self.command(&cmd)?;
-        info!("Команда SM виконана успішно");
+        debug!("Команда SM виконана успішно");
 
         Ok(())
     }

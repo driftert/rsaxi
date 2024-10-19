@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use geo::Point;
-use log::debug;
+use log::{debug, info};
 
 use crate::device::{Device, DeviceError, DeviceOptions, StepMode};
 use crate::drawing::Drawing;
@@ -138,7 +138,7 @@ impl Axidraw {
     pub fn draw(&mut self, drawing: &Drawing) -> Result<(), anyhow::Error> {
         // Ініціалізація пристрою
         self.device.enable_motors(StepMode::OneSixteenth)?;
-        self.device.zero_position()?;
+        // self.device.zero_position()?;
 
         // Ітерація по кожному шляху в малюнку
         for line_string in &drawing.paths.0 {
@@ -207,28 +207,75 @@ impl Axidraw {
     /// # Повертає
     /// - `Result<(), DeviceError>`: `Ok(())` у разі успішного виконання або `DeviceError` у разі помилки.
     pub fn execute_block(&mut self, block: &Block) -> Result<(), DeviceError> {
+        // Логуємо деталі блоку перед виконанням
+        info!(
+            "Виконується блок:
+            Початкова точка (X: {}, Y: {}),
+            Кінцева точка (X: {}, Y: {}),
+            Прискорення: {:.2},
+            Тривалість: {:.2} сек,
+            Початкова швидкість: {:.2} мм/с,
+            Відстань: {:.2} мм",
+            block.p1.x(),
+            block.p1.y(),
+            block.p2.x(),
+            block.p2.y(),
+            block.acceleration,
+            block.duration,
+            block.initial_velocity,
+            block.distance
+        );
+
         // Обчислюємо різницю в позиціях (дельта) у міліметрах
         let delta_x_mm = block.p2.x() - block.p1.x();
         let delta_y_mm = block.p2.y() - block.p1.y();
+
+        // Логуємо обчислену дельту
+        debug!(
+            "Обчислено дельту: ΔX = {} мм, ΔY = {} мм",
+            delta_x_mm, delta_y_mm
+        );
 
         // Конвертуємо дельту з міліметрів у кроки, округлюючи до найближчого цілого числа
         let delta_x_steps = (delta_x_mm * STEPS_PER_MM).round() as i32;
         let delta_y_steps = (delta_y_mm * STEPS_PER_MM).round() as i32;
 
-        // Конвертуємо тривалість блоку з секунд у мілісекунди, округлюючи до найближчого цілого числа
-        let duration_ms = (block.duration * 1000.0).round() as u64;
+        // Логуємо конвертовані кроки
+        debug!(
+            "Дельта у кроках: ΔX = {} кроків, ΔY = {} кроків",
+            delta_x_steps, delta_y_steps
+        );
 
         // Якщо немає кроків для переміщення по обидвом осям, пропускаємо відправку команди
         if delta_x_steps == 0 && delta_y_steps == 0 {
+            info!("Блок пропущено: немає кроків для виконання");
             return Ok(());
         }
+
+        // Обчислюємо відстань для Y-осі
+        let distance_mm = ((delta_x_mm.powi(2) + delta_y_mm.powi(2)).sqrt()).abs();
+
+        // Обчислюємо тривалість блоку на основі швидкості малювання (speed_pendown) і відстані
+        let mut duration_ms = ((distance_mm / self.options.speed_pendown) * 1000.0).round() as u64;
+
+        // Логуємо обчислену тривалість
+        debug!("Обчислена тривалість блоку: {} мс", duration_ms);
+
+        // Обмежуємо тривалість в межах 1 - 16777215 мс
+        duration_ms = duration_ms.clamp(1, 16777215);
 
         // Створюємо об'єкт Duration з мілісекунд
         let duration = Duration::from_millis(duration_ms);
 
+        // Логуємо команду перед її відправленням
+        info!(
+            "Надсилання команди на рух: тривалість = {} мс, кроки по X = {}, кроки по Y = {}",
+            duration_ms, delta_x_steps, delta_y_steps
+        );
+
         // Надсилаємо команду руху до пристрою, передаючи тривалість та кількість кроків для кожної осі
-        self.device
-            .stepper_move(duration, delta_x_steps, Some(delta_y_steps))?;
+        // self.device
+        //     .stepper_move(duration, delta_x_steps, Some(delta_y_steps))?;
 
         // Логуємо деталі виконаного блоку для налагодження
         debug!(
@@ -253,14 +300,14 @@ impl Axidraw {
         let x_steps = (x * STEPS_PER_MM).round() as i32;
         let y_steps = (y * STEPS_PER_MM).round() as i32;
 
-        // Перетворюємо швидкість в кроки/с
+        // Перетворюємо швидкість в кроки/с і обчислюємо тривалість
         let rate = (speed * STEPS_PER_MM).round() as u32;
+        let distance = ((x_steps.pow(2) + y_steps.pow(2)) as f64).sqrt();
+        let duration_ms = (distance / rate as f64 * 1000.0).round() as u64;
 
-        // Обмежуємо швидкість відповідно до можливостей пристрою
-        let rate = rate.min(MAX_RATE);
-
-        // Переміщуємося до абсолютної позиції
-        self.device.home(rate, Some(x_steps), Some(y_steps))?;
+        // Використовуємо команду `stepper_move` для переміщення
+        self.device
+            .stepper_move(Duration::from_millis(duration_ms), x_steps, Some(y_steps))?;
 
         Ok(())
     }
