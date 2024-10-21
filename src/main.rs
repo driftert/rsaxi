@@ -1,7 +1,7 @@
 use anyhow::Result;
 use axidraw::{AxiDrawModel, Axidraw, Options};
 use env_logger::Env;
-use geo::{MultiLineString, Point};
+use geo::{Coord, LineString, MultiLineString};
 
 // Імпортуємо модулі
 mod axidraw;
@@ -27,19 +27,17 @@ fn main() -> Result<()> {
     // Ініціалізація Axidraw з вказаними опціями
     let mut axidraw = Axidraw::new(options)?;
 
-    // Створення квадратного малюнка розміром 5x5 мм, без відступів
-    let square = Drawing::new(
-        (100.0, 100.0),
-        MultiLineString(vec![vec![
-            Point::new(0.0, 0.0),
-            Point::new(50.0, 50.0),
-            Point::new(100.0, 0.0),
-        ]
-        .into()]),
-    );
+    // Створення малюнка з двома лініями
+    let lines = MultiLineString(vec![
+        LineString(vec![Coord { x: 0.0, y: 0.0 }, Coord { x: 50.0, y: 50.0 }]),
+        LineString(vec![Coord { x: 50.0, y: 50.0 }, Coord { x: 100.0, y: 0.0 }]),
+    ]);
+
+    // Створення малюнка з використанням багатолінійної геометрії
+    let drawing = Drawing::new((100.0, 100.0), lines);
 
     // Виконання малювання
-    axidraw.draw(&square)?;
+    axidraw.draw(&drawing)?;
 
     Ok(())
 }

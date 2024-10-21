@@ -1,13 +1,12 @@
 use geo::Point;
-use log::info;
-use std::time::Duration;
+use log::{debug, info};
 
 use crate::device::{Device, DeviceError, DeviceOptions, StepMode};
 use crate::drawing::Drawing;
 use crate::motion::plan::Plan;
 
 /// Константи для налаштування AxiDraw.
-const TIMESLICE_MS: i32 = 10;
+const TIMESLICE_MS: i32 = 100;
 const MICROSTEPPING_MODE: u32 = 1;
 const PEN_UP_POSITION: i32 = 60; // Позиція піднятої ручки за замовчуванням
 const PEN_UP_SPEED: i32 = 150; // Швидкість підйому ручки за замовчуванням
@@ -171,7 +170,7 @@ impl Axidraw {
         }
 
         // Повертаємося до початкової позиції після завершення малювання
-        self.run_path(vec![Point::new(0.0, 0.0)])?;
+        self.home()?;
 
         Ok(())
     }
@@ -216,8 +215,8 @@ impl Axidraw {
     /// # Повертає
     /// - `Result<(), anyhow::Error>`: Повертає Ok або помилку у випадку невдачі.
     fn run_plan(&mut self, plan: &Plan) -> Result<(), anyhow::Error> {
-        let step_ms = TIMESLICE_MS as f64;
-        let step_s = step_ms / 1000.0;
+        let step_ms = TIMESLICE_MS;
+        let step_s = step_ms as f64 / 1000.0;
         let mut t = 0.0;
 
         while t < plan.total_time {
@@ -237,11 +236,8 @@ impl Axidraw {
             let sy = (delta.y() * self.options.steps_per_unit as f64).round();
 
             // Виконуємо команду руху (XM - змішана геометрія для осей A та B)
-            self.device.stepper_move_mixed(
-                Duration::from_millis(step_ms as u64),
-                sx as i32,
-                sy as i32,
-            )?;
+            self.device
+                .stepper_move_mixed(step_ms as u32, sx as i32, sy as i32)?;
 
             // Збільшуємо час
             t += step_s;
@@ -297,6 +293,8 @@ impl Axidraw {
             self.options.max_velocity,
             self.options.corner_factor,
         )?;
+
+        debug!("{}", plan);
 
         self.run_plan(&plan)
     }

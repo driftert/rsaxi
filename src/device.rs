@@ -826,7 +826,7 @@ impl Device {
     /// Якщо обидва кроки осей A і B дорівнюють нулю, виконується затримка на тривалість `duration`.
     ///
     /// # Параметри:
-    /// - `duration`: Тривалість руху у мілісекундах у форматі `Duration` (діапазон 1-16777215 мс).
+    /// - `step_ms`: Тривалість руху у мілісекундах (діапазон 1-16777215 мс).
     /// - `axis_steps_a`: Кількість кроків для осі A (діапазон -16777215 до +16777215).
     /// - `axis_steps_b`: Кількість кроків для осі B (діапазон -16777215 до +16777215).
     ///
@@ -834,15 +834,12 @@ impl Device {
     /// - `Result<(), DeviceError>`: Повертає успіх або помилку у разі невдачі.
     pub fn stepper_move_mixed(
         &mut self,
-        duration: Duration, // Тривалість у форматі `Duration`
-        axis_steps_a: i32,  // Кількість кроків для осі A
-        axis_steps_b: i32,  // Кількість кроків для осі B
+        step_ms: u32,      // Тривалість у мілісекундах
+        axis_steps_a: i32, // Кількість кроків для осі A
+        axis_steps_b: i32, // Кількість кроків для осі B
     ) -> Result<(), DeviceError> {
-        // Конвертуємо тривалість у мілісекунди
-        let duration_ms = duration.as_millis();
-
         // Перевіряємо діапазон значень для тривалості і кроків
-        if duration_ms < 1 || duration_ms > 16777215 {
+        if step_ms < 1 || step_ms > 16777215 {
             return Err(DeviceError::CommandError(
                 "Тривалість повинна бути в діапазоні 1 - 16777215 мс".to_string(),
             ));
@@ -856,7 +853,7 @@ impl Device {
         }
 
         // Формуємо команду "XM,Duration,AxisStepsA,AxisStepsB"
-        let cmd = format!("XM,{},{},{}", duration_ms, axis_steps_a, axis_steps_b);
+        let cmd = format!("XM,{},{},{}", step_ms, axis_steps_a, axis_steps_b);
 
         debug!("Відправлення команди: {}", cmd);
         self.command(&cmd)?;
