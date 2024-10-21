@@ -35,7 +35,7 @@ impl Plan {
     pub fn new(
         points: Vec<Point>,
         vs: Vec<f64>,
-        mut vmaxs: Vec<f64>,
+        vmaxs: Vec<f64>,
         a: f64,
         vmax: f64,
         cf: f64,

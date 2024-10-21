@@ -1,6 +1,6 @@
 use log::{debug, error, info};
 use serialport::{available_ports, DataBits, Parity, SerialPort, SerialPortType, StopBits};
-use std::time::Duration;
+use std::{cmp::max, time::Duration};
 use thiserror::Error;
 
 /// Тип для обробки помилок, які можуть виникнути під час роботи з пристроєм
@@ -40,14 +40,16 @@ pub struct MotorStatus {
 
 /// Структура для налаштувань пристрою, які приймаються в конструкторі `Device`
 pub struct DeviceOptions {
-    pub pen_up_position: i32,      // Положення ручки при піднятій ручці.
-    pub pen_down_position: i32,    // Положення ручки при опущеній ручці.
-    pub pen_up_speed: i32,         // Швидкість підняття механізму ручки.
-    pub pen_down_speed: i32,       // Швидкість опускання механізму ручки.
-    pub pen_up_delay: i32,         // Затримка після підняття ручки (в мілісекундах).
-    pub pen_down_delay: i32,       // Затримка після опускання ручки (в мілісекундах).
-    pub step_mode: StepMode,       // Режим кроку для моторів.
-    pub port_name: Option<String>, // Назва порту для підключення (опціонально).
+    pub steps_per_unit: i32,
+    pub pen_up_position: i32,        // Положення ручки при піднятій ручці.
+    pub pen_up_speed: i32,           // Швидкість підняття механізму підйому ручки.
+    pub pen_up_delay: i32,           // Затримка після підняття ручки.
+    pub pen_down_position: i32,      // Положення ручки при опущеній ручці.
+    pub pen_down_speed: i32,         // Швидкість опускання механізму підйому ручки.
+    pub pen_down_delay: i32,         // Затримка після опускання ручки.
+    pub step_mode: StepMode,         // Режим кроку для моторів.
+    pub port_name: Option<String>,   // Назва порту для підключення (опціонально).
+    pub port_config: Option<String>, // Перевизначити спосіб знаходження USB-портів.
 }
 
 /// Структура Device для керування підключенням до пристрою через серійний порт
@@ -58,12 +60,13 @@ pub struct Device {
     pub connected: bool,           // Прапорець для відстеження стану підключення
 
     // Глобальні конфігураційні параметри для управління ручкою
-    pub pen_up_position: i32,   // Максимальна позиція підйому ручки
-    pub pen_up_speed: i32,      // Швидкість підйому ручки
-    pub pen_up_delay: i32,      // Затримка при підйомі
-    pub pen_down_position: i32, // Мінімальна позиція опускання ручки
-    pub pen_down_speed: i32,    // Швидкість опускання ручки
-    pub pen_down_delay: i32,    // Затримка при опусканні
+    pub steps_per_unit: i32,
+    pub pen_up_position: i32,   // Положення ручки при піднятій ручці.
+    pub pen_up_speed: i32,      // Швидкість підняття механізму підйому ручки.
+    pub pen_up_delay: i32,      // Затримка після підняття ручки.
+    pub pen_down_position: i32, // Положення ручки при опущеній ручці.
+    pub pen_down_speed: i32,    // Швидкість опускання механізму підйому ручки.
+    pub pen_down_delay: i32,    // Затримка після опускання ручки.
 
     // Стан ручки
     pub is_lowered: bool, // Стан ручки: true — опущена, false — піднята
@@ -98,6 +101,7 @@ impl Device {
         let mut device = Self {
             port,
             connected: true,
+            steps_per_unit: options.steps_per_unit,
             pen_up_position: options.pen_up_position,
             pen_up_speed: options.pen_up_speed,
             pen_up_delay: options.pen_up_delay,
@@ -135,17 +139,13 @@ impl Device {
         let servo_min = 7500;
         let servo_max = 28000;
 
-        // Розрахунок позиції підйому ручки (пропорційно до діапазону значень сервоприводу)
-        let pen_up_position = (self.pen_up_position as f32 / 100.0)
-            * (servo_max - servo_min) as f32
-            + servo_min as f32;
-        let pen_up_position = pen_up_position as i32;
+        // Розрахунок позиції підйому ручки
+        let pen_up_position = self.pen_up_position / 100;
+        let pen_up_position = servo_min + (servo_max - servo_min) * pen_up_position;
 
-        // Розрахунок позиції опускання ручки (пропорційно до діапазону значень сервоприводу)
-        let pen_down_position = (self.pen_down_position as f32 / 100.0)
-            * (servo_max - servo_min) as f32
-            + servo_min as f32;
-        let pen_down_position = pen_down_position as i32;
+        // Розрахунок позиції опускання ручки
+        let pen_down_position = self.pen_down_position / 100;
+        let pen_down_position = servo_min + (servo_max - servo_min) * pen_down_position;
 
         // Відправка команд для конфігурації позицій і швидкостей
         self.command(&format!("SC,4,{}", pen_up_position))?;
@@ -482,7 +482,7 @@ impl Device {
     pub fn pen_down(&mut self) -> Result<(), DeviceError> {
         let delta = (self.pen_up_position - self.pen_down_position).abs();
         let duration = (1000 * delta) / self.pen_down_speed;
-        let delay = duration + self.pen_down_delay;
+        let delay = max(0, duration + self.pen_down_delay);
         self.pen_state(0, Some(Duration::from_millis(delay as u64)), None)
     }
 
@@ -493,7 +493,7 @@ impl Device {
     pub fn pen_up(&mut self) -> Result<(), DeviceError> {
         let delta = (self.pen_up_position - self.pen_down_position).abs();
         let duration = (1000 * delta) / self.pen_up_speed;
-        let delay = duration + self.pen_up_delay;
+        let delay = max(0, duration + self.pen_up_delay);
         self.pen_state(1, Some(Duration::from_millis(delay as u64)), None)
     }
 

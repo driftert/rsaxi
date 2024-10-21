@@ -27,23 +27,13 @@ fn main() -> Result<()> {
     // Ініціалізація Axidraw з вказаними опціями
     let mut axidraw = Axidraw::new(options)?;
 
-    // Отримання розмірів моделі
-    let model_width = axidraw.options.model.width();
-    let model_height = axidraw.options.model.height();
-
-    // Визначення меж малюнка на основі розмірів моделі з додаванням відступів
-    let margin = 10.0; // Відступ у мм
-    let drawing_bounds = (model_width - 2.0 * margin, model_height - 2.0 * margin);
-
-    // Створення квадратного малюнка в межах робочої області
+    // Створення квадратного малюнка розміром 5x5 мм, без відступів
     let square = Drawing::new(
-        drawing_bounds, // Межі: ширина і висота в мм
+        (100.0, 100.0),
         MultiLineString(vec![vec![
-            Point::new(margin, margin),
-            Point::new(margin, drawing_bounds.1 - margin),
-            Point::new(drawing_bounds.0 - margin, drawing_bounds.1 - margin),
-            Point::new(drawing_bounds.0 - margin, margin),
-            Point::new(margin, margin),
+            Point::new(0.0, 0.0),
+            Point::new(50.0, 50.0),
+            Point::new(100.0, 0.0),
         ]
         .into()]),
     );
