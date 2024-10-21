@@ -4,7 +4,6 @@ use super::{
 };
 use crate::motion::util::corner_velocity;
 use geo::Point;
-use log::{debug, info};
 use std::{f64::EPSILON, fmt}; // Додаємо обидва рівні логування
 
 /// Структура `Plan` представляє план руху, що складається з кількох сегментів (блоків).
@@ -41,180 +40,114 @@ impl Plan {
         vmax: f64,
         cf: f64,
     ) -> Result<Self, PlanError> {
-        let mut segments = Vec::new();
-        info!("Початок створення сегментів руху для траєкторії.");
-        debug!("Точки маршруту: {:?}, Прискорення: {}, Максимальна швидкість: {}, Коефіцієнт повороту: {}", points, a, vmax, cf);
+        let eps = EPSILON;
 
-        // Створюємо сегменти між сусідніми точками
+        // Create segments for each consecutive pair of points
+        let mut segments: Vec<Segment> = vec![];
         for i in 1..points.len() {
-            let segment = Segment::new(points[i - 1].clone(), points[i].clone());
-            if segment.length > EPSILON {
-                info!(
-                    "Додано сегмент довжиною {:.2} мм між точками {:?}",
-                    segment.length,
-                    (points[i - 1], points[i])
-                );
-                debug!("Сегмент {} має довжину: {:.2}", i, segment.length);
-                segments.push(segment);
-            }
+            segments.push(Segment::new(points[i - 1], points[i]));
         }
 
-        // Остання точка для завершення траєкторії
-        let last_point = points[points.len() - 1].clone();
-        segments.push(Segment::new(last_point.clone(), last_point.clone()));
-        info!("Додано останній сегмент для завершення траєкторії.");
-        debug!("Кількість сегментів: {}", segments.len());
+        // Add a dummy segment at the end for setting final velocity
+        let last_point = points[points.len() - 1];
+        segments.push(Segment::new(last_point, last_point));
 
-        // Якщо vmaxs порожній, заповнюємо його значенням vmax для кожної точки
-        if vmaxs.is_empty() {
-            vmaxs = vec![vmax; points.len()];
-            info!("Використано максимальну швидкість за замовчуванням для всіх точок.");
+        // Optional per-segment vmax
+        let vmaxs = if vmaxs.is_empty() {
+            vec![vmax; points.len()]
         } else if vmaxs.len() != points.len() {
-            panic!("Масив максимальних швидкостей має бути порожнім або такого ж розміру, як масив точок.");
-        }
+            panic!("vmaxs array must be empty or same length as points array");
+        } else {
+            vmaxs
+        };
 
-        // Заповнення вектору вхідних швидкостей для сегментів
+        // Set max_entry_velocity based on the input velocities or angles between segments
         if vs.is_empty() {
-            segments[0].max_entry_velocity = vmaxs[0];
             for i in 1..segments.len() - 1 {
-                let (left, right) = segments.split_at_mut(i);
-                let s1 = &left[i - 1];
-                let s2 = &mut right[0];
+                let (s1_slice, s2_slice) = segments.split_at_mut(i);
+                let s1 = &s1_slice[i - 1];
+                let s2 = &mut s2_slice[0];
                 s2.max_entry_velocity = corner_velocity(s1, s2, vmaxs[i], a, cf);
-                info!("Розраховано вхідну швидкість для сегмента {} з урахуванням коефіцієнта повороту.", i);
-                debug!(
-                    "Вхідна швидкість для сегменту {} з vmax: {}, прискоренням: {}, коефіцієнтом повороту: {} дорівнює {}",
-                    i, vmaxs[i], a, cf, s2.max_entry_velocity
-                );
             }
         } else if vs.len() == points.len() {
-            for i in 0..vs.len() {
-                segments[i].max_entry_velocity = vs[i].min(vmaxs[i]);
-                debug!(
-                    "Встановлено max_entry_velocity для сегмента {} = {}",
-                    i, segments[i].max_entry_velocity
-                );
+            for (i, &v) in vs.iter().enumerate() {
+                segments[i].max_entry_velocity = vmaxs[i].min(v);
             }
         } else {
-            panic!("Масив швидкостей має бути або порожнім, або того ж розміру, що і масив точок.");
+            panic!("vs array must be empty or same length as points array");
         }
 
-        // Використовуємо isize для дозволу від'ємних значень при backtracking
-        let mut i: isize = 0;
-        while (i as usize) < segments.len() - 1 {
-            let current_index = i as usize;
-
-            // Розділяємо вектор на дві частини: до поточного індексу + 1 і після
-            let (left, right) = segments.split_at_mut(current_index + 1);
-
-            let segment = &left[current_index];
-            let next_segment = &mut right[0];
-
+        // Loop over segments
+        let mut i: usize = 0;
+        while i < segments.len() - 1 {
+            let (current_segments, next_segments) = segments.split_at_mut(i + 1);
+            let segment = &mut current_segments[i];
+            let next_segment = &mut next_segments[0];
             let s = segment.length;
             let vi = segment.entry_velocity;
-            let vmax_segment = segment.max_entry_velocity;
-            let vexit = next_segment.max_entry_velocity.min(vmax_segment);
+            let vmax = vmaxs[i];
+            let vexit = vmax.min(next_segment.max_entry_velocity);
             let p1 = segment.p1;
             let p2 = segment.p2;
-            let mut block_list: Vec<Block> = Vec::new();
 
-            // Визначення профілю руху: трикутний або трапецідальний
+            let mut blocks: Vec<Block> = vec![];
+
+            // Determine which profile to use for this segment
             let m = Triangle::triangular_profile(s, vi, vexit, a, p1, p2);
-
-            if m.s1 < -EPSILON {
-                info!("Швидкість для сегменту {} перевищує допустиму. Проводиться зменшення швидкості.", current_index);
-                left[current_index].max_entry_velocity = (vexit.powi(2) + 2.0 * a * s).sqrt();
-                i -= 1;
-                debug!(
-                    "Повернення до сегменту {}: зменшено max_entry_velocity до {}",
-                    current_index, left[current_index].max_entry_velocity
-                );
-            } else if m.s2 <= 0.0 {
-                info!(
-                    "Сегмент {}: профіль прискорення без гальмування.",
-                    current_index
-                );
-                let vf = (vi.powi(2) + 2.0 * a * s).sqrt();
+            if m.s1 < -eps {
+                // Too fast! Update max_entry_velocity and backtrack
+                segment.max_entry_velocity = (vexit * vexit + 2.0 * a * s).sqrt();
+                if i > 0 {
+                    i -= 1;
+                }
+            } else if m.s2 < 0.0 {
+                // Accelerate
+                let vf = (vi * vi + 2.0 * a * s).sqrt();
                 let t = (vf - vi) / a;
-                let block = Block::new(a, t, vi, p1, p2);
-                block_list.push(block);
+                blocks.push(Block::new(a, t, vi, p1, p2));
                 next_segment.entry_velocity = vf;
                 i += 1;
-                debug!(
-                    "Сегмент {}: vf = {}, вхідна швидкість наступного сегменту = {}",
-                    current_index, vf, next_segment.entry_velocity
-                );
-            } else if m.vmax > vmax_segment + EPSILON {
-                info!("Сегмент {}: профіль трапеціїдального типу.", current_index);
-                let z = Trapezoid::trapezoidal_profile(s, vi, vmax_segment, vexit, a, p1, p2);
-                let block1 = Block::new(a, z.t1, vi, z.p1, z.p2);
-                let block2 = Block::new(0.0, z.t2, vmax_segment, z.p2, z.p3);
-                let block3 = Block::new(-a, z.t3, vmax_segment, z.p3, z.p4);
-                block_list.push(block1);
-                block_list.push(block2);
-                block_list.push(block3);
+            } else if m.vmax > vmax {
+                // Accelerate, cruise, decelerate
+                let z = Trapezoid::trapezoidal_profile(s, vi, vmax, vexit, a, p1, p2);
+                blocks.push(Block::new(a, z.t1, vi, z.p1, z.p2));
+                blocks.push(Block::new(0.0, z.t2, vmax, z.p2, z.p3));
+                blocks.push(Block::new(-a, z.t3, vmax, z.p3, z.p4));
                 next_segment.entry_velocity = vexit;
                 i += 1;
-                debug!(
-                    "Сегмент {}: трапецідальний профіль, вхідна швидкість наступного сегменту = {}",
-                    current_index, next_segment.entry_velocity
-                );
             } else {
-                info!(
-                    "Сегмент {}: комбінований профіль прискорення та гальмування.",
-                    current_index
-                );
-                let block1 = Block::new(a, m.t1, vi, m.p1, m.p2);
-                let block2 = Block::new(-a, m.t2, m.vmax, m.p2, m.p3);
-                block_list.push(block1);
-                block_list.push(block2);
+                // Accelerate, decelerate
+                blocks.push(Block::new(a, m.t1, vi, m.p1, m.p2));
+                blocks.push(Block::new(-a, m.t2, m.vmax, m.p2, m.p3));
                 next_segment.entry_velocity = vexit;
                 i += 1;
-                debug!(
-                    "Сегмент {}: комбінований профіль, вхідна швидкість наступного сегменту = {}",
-                    current_index, next_segment.entry_velocity
-                );
             }
-
-            // Присвоєння блоків сегменту
-            left[current_index].blocks = block_list;
+            segment.blocks = blocks;
         }
 
-        // Конкатенація всіх блоків з сегментів
-        let mut all_blocks: Vec<Block> = Vec::new();
+        // Concatenate all blocks
+        let mut all_blocks: Vec<Block> = vec![];
         for segment in &segments {
             for block in &segment.blocks {
-                if block.duration > EPSILON {
+                if block.duration > eps {
                     all_blocks.push(block.clone());
                 }
             }
         }
 
-        // Обчислення початкового часу та відстані для кожного блоку
-        let mut ts: Vec<f64> = Vec::with_capacity(all_blocks.len());
-        let mut ss: Vec<f64> = Vec::with_capacity(all_blocks.len());
+        // Compute starting time and position for each block
+        let mut ts = vec![0.0; all_blocks.len()];
+        let mut ss = vec![0.0; all_blocks.len()];
         let mut t = 0.0;
         let mut s = 0.0;
-
-        for block in &all_blocks {
-            ts.push(t);
-            ss.push(s);
+        for (i, block) in all_blocks.iter().enumerate() {
+            ts[i] = t;
+            ss[i] = s;
             t += block.duration;
             s += block.distance;
         }
 
-        info!(
-            "План руху успішно створений. Загальний час: {:.2} секунд, загальна відстань: {:.2} мм",
-            t, s
-        );
-        debug!(
-            "Загальна кількість блоків: {}, загальний час: {:.2}, загальна відстань: {:.2}",
-            all_blocks.len(),
-            t,
-            s
-        );
-
-        Ok(Self {
+        Ok(Plan {
             blocks: all_blocks,
             total_time: t,
             total_distance: s,
@@ -306,5 +239,45 @@ impl fmt::Display for Plan {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use geo::Point;
+
+    #[test]
+    fn test_plan_with_three_points_investigate_velocity() {
+        // Ініціалізуємо логгер
+        let _ = env_logger::builder()
+            .is_test(true)
+            .filter_level(log::LevelFilter::Debug)
+            .try_init();
+
+        // Визначаємо три точки для плану
+        let p1 = Point::new(0.0, 0.0);
+        let p2 = Point::new(50.0, 50.0);
+        let p3 = Point::new(100.0, 0.0);
+
+        let points = vec![p1, p2, p3];
+
+        // Використовуємо пусті вектори для швидкостей
+        let vs = vec![];
+        let vmaxs = vec![];
+
+        // Налаштовуємо прискорення і максимальну швидкість
+        let acceleration = 20.0;
+        let max_velocity = 100.0;
+        let corner_factor = 1.0;
+
+        // Створюємо новий план руху
+        let plan_result = Plan::new(points, vs, vmaxs, acceleration, max_velocity, corner_factor);
+
+        // Перевіряємо, чи план створено успішно
+        assert!(plan_result.is_ok());
+
+        let plan = plan_result.unwrap();
+        println!("{}", plan);
     }
 }
