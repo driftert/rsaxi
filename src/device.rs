@@ -120,6 +120,9 @@ impl Device {
 
         // Зчитуємо поточний стан моторів
         let (motor1_enabled, motor2_enabled, step_mode) = device.query_enable_motors()?;
+        if !motor1_enabled || !motor2_enabled {
+            device.enable_motors(step_mode)?;
+        }
 
         device.motor1_enabled = motor1_enabled;
         device.motor2_enabled = motor2_enabled;
@@ -1063,7 +1066,14 @@ impl Device {
 /// Автоматичне відключення пристрою при його знищенні
 impl Drop for Device {
     fn drop(&mut self) {
+        // Вимикаємо мотори перед відключенням пристрою
+        if self.motor1_enabled || self.motor2_enabled {
+            if let Err(e) = self.disable_motors() {
+                error!("Не вдалося вимкнути мотори: {:?}", e);
+            }
+        }
+
         self.disconnect();
-        info!("Пристрій відключено");
+        info!("Пристрій відключено, мотори вимкнено.");
     }
 }

@@ -149,22 +149,11 @@ impl Axidraw {
         // Піднімаємо перо перед початком малювання
         self.device.pen_up()?;
 
-        // Ініціалізація поточної позиції
-        let mut position = Point::new(0.0, 0.0);
-
         // Ітерація по кожному шляху в MultiLineString
         for line_string in &drawing.paths.0 {
             if line_string.0.is_empty() {
                 continue;
             }
-
-            // Перетворення першої координати на Point
-            let start_coord = line_string.0[0];
-            let start_point = Point::new(start_coord.x, start_coord.y);
-
-            // Переміщуємося до початкової точки шляху
-            let move_path = vec![position, start_point]; // Формуємо шлях для переміщення до нової позиції
-            self.run_path(move_path)?; // Виконуємо переміщення до початкової точки шляху
 
             // Опускаємо перо для початку малювання
             self.device.pen_down()?;
@@ -179,17 +168,10 @@ impl Axidraw {
 
             // Піднімаємо перо після завершення шляху
             self.device.pen_up()?;
-
-            // Оновлюємо поточну позицію
-            let last_coord = line_string.0.last().unwrap();
-            position = Point::new(last_coord.x, last_coord.y);
         }
 
         // Повертаємося до початкової позиції після завершення малювання
-        self.run_path(vec![position, Point::new(0.0, 0.0)])?;
-
-        // Вимикаємо мотори після завершення
-        self.device.disable_motors()?;
+        self.run_path(vec![Point::new(0.0, 0.0)])?;
 
         Ok(())
     }
@@ -233,7 +215,7 @@ impl Axidraw {
     ///
     /// # Повертає
     /// - `Result<(), anyhow::Error>`: Повертає Ok або помилку у випадку невдачі.
-    pub fn run_plan(&mut self, plan: &Plan) -> Result<(), anyhow::Error> {
+    fn run_plan(&mut self, plan: &Plan) -> Result<(), anyhow::Error> {
         let step_ms = TIMESLICE_MS as f64;
         let step_s = step_ms / 1000.0;
         let mut t = 0.0;
@@ -276,7 +258,7 @@ impl Axidraw {
     ///
     /// # Повертає
     /// - `Result<(), anyhow::Error>`: Повертає Ok або помилку у випадку невдачі.
-    pub fn goto(&mut self, x: f64, y: f64) -> Result<(), anyhow::Error> {
+    fn goto(&mut self, x: f64, y: f64) -> Result<(), anyhow::Error> {
         // Зчитуємо поточні позиції кроків моторів
         let (motor1_steps, motor2_steps) = self.device.read_position()?;
 
