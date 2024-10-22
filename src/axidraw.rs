@@ -6,7 +6,7 @@ use crate::drawing::Drawing;
 use crate::motion::plan::Plan;
 
 /// Константи для налаштування AxiDraw.
-const TIMESLICE_MS: i32 = 100;
+const TIMESLICE_MS: i32 = 10;
 const MICROSTEPPING_MODE: u32 = 1;
 const PEN_UP_POSITION: i32 = 60; // Позиція піднятої ручки за замовчуванням
 const PEN_UP_SPEED: i32 = 150; // Швидкість підйому ручки за замовчуванням
@@ -239,8 +239,29 @@ impl Axidraw {
             self.device
                 .stepper_move_mixed(step_ms as u32, sx as i32, sy as i32)?;
 
+            // Очікуємо завершення руху
+            self.wait_for_motors()?;
+
             // Збільшуємо час
             t += step_s;
+        }
+
+        Ok(())
+    }
+
+    /// Очікує завершення руху двигунів.
+    fn wait_for_motors(&mut self) -> Result<(), anyhow::Error> {
+        loop {
+            // Отримуємо статус моторів
+            let (motor1_status, motor2_status) = self.device.motor_status()?;
+
+            // Якщо обидва мотори зупинилися, виходимо з циклу
+            if !motor1_status.moving && !motor2_status.moving {
+                break;
+            }
+
+            // Додаємо невелику затримку перед наступною перевіркою
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
 
         Ok(())
