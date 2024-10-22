@@ -148,13 +148,23 @@ impl Axidraw {
         // Піднімаємо перо перед початком малювання
         self.device.pen_up()?;
 
+        // Ініціалізація змінної для відстеження останньої точки
+        let mut last_position = Point::new(0.0, 0.0);
+
         // Ітерація по кожному шляху в MultiLineString
         for line_string in &drawing.paths.0 {
             if line_string.0.is_empty() {
                 continue;
             }
 
-            // Опускаємо перо для початку малювання
+            // Отримуємо першу точку поточного шляху
+            let start_coord = line_string.0[0];
+            let start_point = Point::new(start_coord.x, start_coord.y);
+
+            // Переміщуємося до початкової точки з піднятим пером
+            self.run_path(vec![last_position, start_point])?;
+
+            // Опускаємо перо для початку малювання після досягнення початкової точки
             self.device.pen_down()?;
 
             // Малюємо шлях
@@ -163,14 +173,22 @@ impl Axidraw {
                 .iter()
                 .map(|coord| Point::new(coord.x, coord.y))
                 .collect(); // Конвертуємо всі координати на Point
-            self.run_path(draw_path)?; // Виконуємо малювання по точках
+
+            // Отримуємо останню точку перед передачею в run_path
+            let last_point = *draw_path.last().unwrap();
+
+            // Виконуємо малювання по точках
+            self.run_path(draw_path)?;
+
+            // Оновлюємо останню позицію до кінцевої точки поточного шляху
+            last_position = last_point;
 
             // Піднімаємо перо після завершення шляху
             self.device.pen_up()?;
         }
 
-        // Повертаємося до початкової позиції після завершення малювання
-        self.home()?;
+        // Після завершення малювання повертаємося до початкової позиції (0, 0)
+        self.run_path(vec![last_position, Point::new(0.0, 0.0)])?;
 
         Ok(())
     }
