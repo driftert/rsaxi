@@ -9,8 +9,8 @@ pub enum DeviceError {
     #[error("Помилка підключення: {0}")]
     ConnectionError(String),
 
-    #[error("Помилка команди: {0}")]
-    CommandError(String),
+    #[error("Помилка команди '{command}': {message}")]
+    CommandError { command: String, message: String },
 
     #[error("Невірне значення для параметру: {parameter}, значення: {value}")]
     InvalidValue { parameter: String, value: String },
@@ -217,7 +217,7 @@ impl Device {
 
         // Ініціалізація порту
         port.write_data_terminal_ready(true).map_err(|e| {
-            DeviceError::CommandError(format!("Помилка ініціалізації порту: {}", e))
+            DeviceError::ConnectionError(format!("Помилка ініціалізації порту: {}", e))
         })?;
 
         info!("Підключено до пристрою: {}", port_name);
@@ -235,8 +235,8 @@ impl Device {
     /// # Повертає:
     /// - `Result<String, DeviceError>`: Відповідь від пристрою або помилку, якщо команда не виконується.
     pub fn command(&mut self, cmd: &str) -> Result<String, DeviceError> {
-        // Локальна функція для зчитування буфера відповіді
-        fn read_full_response(port: &mut dyn SerialPort) -> Result<String, DeviceError> {
+        // Використовуємо closure замість вкладеної функції для зчитування буфера відповіді
+        let read_full_response = |port: &mut dyn SerialPort| -> Result<String, DeviceError> {
             let mut response = Vec::new();
             loop {
                 let mut buffer = [0; 256];
@@ -251,38 +251,41 @@ impl Device {
                         break;
                     }
                     Err(e) => {
-                        return Err(DeviceError::CommandError(format!(
-                            "Помилка читання відповіді: {}",
-                            e
-                        )));
+                        return Err(DeviceError::CommandError {
+                            command: cmd.to_string(),
+                            message: format!("Помилка читання відповіді: {}", e),
+                        });
                     }
                 }
             }
             let response_str = String::from_utf8_lossy(&response).to_string();
             debug!("Отримано відповідь: {}", response_str);
             Ok(response_str)
-        }
+        };
 
         // Перевірка, чи команда порожня
         if cmd.is_empty() {
-            return Err(DeviceError::CommandError(
-                "Команда не може бути порожньою".to_string(),
-            ));
+            return Err(DeviceError::CommandError {
+                command: cmd.to_string(),
+                message: "Команда не може бути порожньою".to_string(),
+            });
         }
 
         // Перевірка, чи команда містить недопустимі символи
         if !cmd.is_ascii() || cmd.contains(|c| c == '\n' || c == '\r') {
-            return Err(DeviceError::CommandError(
-                "Команда містить недозволені символи".to_string(),
-            ));
+            return Err(DeviceError::CommandError {
+                command: cmd.to_string(),
+                message: "Команда містить недозволені символи".to_string(),
+            });
         }
 
         // Формування повної команди з додаванням символа `\r`
         let full_cmd = format!("{}\r", cmd.trim());
         if full_cmd.len() > 256 {
-            return Err(DeviceError::CommandError(
-                "Команда перевищує максимальну довжину 256 байт".to_string(),
-            ));
+            return Err(DeviceError::CommandError {
+                command: cmd.to_string(),
+                message: "Команда перевищує максимальну довжину 256 байт".to_string(),
+            });
         }
 
         // Деякі команди не очікують "OK" у відповіді
@@ -296,9 +299,12 @@ impl Device {
         }
 
         debug!("Відправлення команди: {}", full_cmd.trim_end());
-        self.port.write_all(full_cmd.as_bytes()).map_err(|e| {
-            DeviceError::CommandError(format!("Помилка відправлення команди: {}", e))
-        })?;
+        self.port
+            .write_all(full_cmd.as_bytes())
+            .map_err(|e| DeviceError::CommandError {
+                command: cmd.to_string(),
+                message: format!("Помилка відправлення команди: {}", e),
+            })?;
 
         let response = read_full_response(self.port.as_mut())?;
 
@@ -311,9 +317,10 @@ impl Device {
                 let trimmed_response = response.trim_end_matches("OK\r\n").to_string();
                 Ok(trimmed_response)
             } else {
-                Err(DeviceError::CommandError(
-                    "Відповідь не містить очікуваного OK".to_string(),
-                ))
+                return Err(DeviceError::CommandError {
+                    command: cmd.to_string(),
+                    message: "Відповідь не містить очікуваного OK".to_string(),
+                });
             }
         } else {
             Ok(response)
@@ -356,15 +363,17 @@ impl Device {
     /// - `Result<(), DeviceError>`: Повертає Ok або помилку в разі, якщо псевдонім недійсний або команда не виконується.
     pub fn nickname(&mut self, nickname: &str) -> Result<(), DeviceError> {
         if nickname.len() > 16 {
-            return Err(DeviceError::CommandError(
-                "Псевдонім повинен містити не більше 16 символів".to_string(),
-            ));
+            return Err(DeviceError::InvalidValue {
+                parameter: "nickname".to_string(),
+                value: nickname.to_string(),
+            });
         }
 
         if !nickname.is_ascii() {
-            return Err(DeviceError::CommandError(
-                "Псевдонім повинен містити лише ASCII символи".to_string(),
-            ));
+            return Err(DeviceError::InvalidValue {
+                parameter: "nickname".to_string(),
+                value: nickname.to_string(),
+            });
         }
 
         let cmd = format!("ST,{}", nickname);
@@ -402,17 +411,17 @@ impl Device {
     /// - Якщо передано недійсний порт або пін (порт не з A-E або пін поза діапазоном 0-7), метод повертає помилку.
     pub fn read_pin(&mut self, port: char, pin: u8) -> Result<bool, DeviceError> {
         if !['A', 'B', 'C', 'D', 'E'].contains(&port) {
-            return Err(DeviceError::CommandError(format!(
-                "Недійсний порт: {}. Доступні порти: A, B, C, D, E",
-                port
-            )));
+            return Err(DeviceError::InvalidValue {
+                parameter: "port".to_string(),
+                value: port.to_string(),
+            });
         }
 
         if pin > 7 {
-            return Err(DeviceError::CommandError(format!(
-                "Недійсний пін: {}. Допустимі значення: 0-7",
-                pin
-            )));
+            return Err(DeviceError::InvalidValue {
+                parameter: "pin".to_string(),
+                value: pin.to_string(),
+            });
         }
 
         let cmd = format!("PI,{},{}", port, pin);
@@ -449,26 +458,26 @@ impl Device {
     pub fn pin_direction(&mut self, port: char, pin: u8, direction: u8) -> Result<(), DeviceError> {
         // Перевіряємо, чи передано дійсний порт
         if !['A', 'B', 'C', 'D', 'E'].contains(&port) {
-            return Err(DeviceError::CommandError(format!(
-                "Недійсний порт: {}. Доступні порти: A, B, C, D, E",
-                port
-            )));
+            return Err(DeviceError::InvalidValue {
+                parameter: "port".to_string(),
+                value: port.to_string(),
+            });
         }
 
         // Перевіряємо, чи номер піну є в межах діапазону (0-7)
         if pin > 7 {
-            return Err(DeviceError::CommandError(format!(
-                "Недійсний пін: {}. Допустимі значення: 0-7",
-                pin
-            )));
+            return Err(DeviceError::InvalidValue {
+                parameter: "pin".to_string(),
+                value: pin.to_string(),
+            });
         }
 
         // Перевіряємо, чи напрямок є дійсним (0 - вихід, 1 - вхід)
         if direction > 1 {
-            return Err(DeviceError::CommandError(format!(
-                "Недійсний напрямок: {}. Доступні значення: 0 (вихід), 1 (вхід)",
-                direction
-            )));
+            return Err(DeviceError::InvalidValue {
+                parameter: "direction".to_string(),
+                value: direction.to_string(),
+            });
         }
 
         // Формуємо команду "PD,Port,Pin,Direction"
@@ -689,9 +698,10 @@ impl Device {
         // Валідація значення параметра `clear`
         if let Some(c) = clear {
             if c > 3 {
-                return Err(DeviceError::CommandError(
-                    "Недійсне значення для параметра Clear".to_string(),
-                ));
+                return Err(DeviceError::InvalidValue {
+                    parameter: "clear".to_string(),
+                    value: c.to_string(),
+                });
             }
         }
 
@@ -727,29 +737,34 @@ impl Device {
         position1: Option<i32>, // Абсолютна позиція для мотора 1 (опціонально)
         position2: Option<i32>, // Абсолютна позиція для мотора 2 (опціонально)
     ) -> Result<(), DeviceError> {
+        // Валідація параметра step_frequency
         if step_frequency < 2 || step_frequency > 25000 {
-            return Err(DeviceError::CommandError(
-                "Частота кроків повинна бути в діапазоні від 2 до 25000".to_string(),
-            ));
+            return Err(DeviceError::InvalidValue {
+                parameter: "step_frequency".to_string(),
+                value: step_frequency.to_string(),
+            });
         }
 
         let mut cmd = format!("HM,{}", step_frequency);
 
-        // Додаємо абсолютні позиції для моторів, якщо вони вказані
+        // Валідація і додавання абсолютної позиції для мотора 1
         if let Some(pos1) = position1 {
             if pos1.abs() > 4_294_967 {
-                return Err(DeviceError::CommandError(
-                    "Позиція мотора 1 повинна бути в діапазоні ±4,294,967".to_string(),
-                ));
+                return Err(DeviceError::InvalidValue {
+                    parameter: "position1".to_string(),
+                    value: pos1.to_string(),
+                });
             }
             cmd.push_str(&format!(",{}", pos1));
         }
 
+        // Валідація і додавання абсолютної позиції для мотора 2
         if let Some(pos2) = position2 {
             if pos2.abs() > 4_294_967 {
-                return Err(DeviceError::CommandError(
-                    "Позиція мотора 2 повинна бути в діапазоні ±4,294,967".to_string(),
-                ));
+                return Err(DeviceError::InvalidValue {
+                    parameter: "position2".to_string(),
+                    value: pos2.to_string(),
+                });
             }
             cmd.push_str(&format!(",{}", pos2));
         }
@@ -783,22 +798,25 @@ impl Device {
 
         // Перевіряємо діапазон значень для тривалості і кроків
         if duration_ms < 1 || duration_ms > 16777215 {
-            return Err(DeviceError::CommandError(
-                "Тривалість повинна бути в діапазоні 1 - 16777215 мс".to_string(),
-            ));
+            return Err(DeviceError::InvalidValue {
+                parameter: "duration".to_string(),
+                value: duration_ms.to_string(),
+            });
         }
 
         if axis_steps1.abs() > 16777215 {
-            return Err(DeviceError::CommandError(
-                "Кроки для осі 1 повинні бути в діапазоні -16777215 до +16777215".to_string(),
-            ));
+            return Err(DeviceError::InvalidValue {
+                parameter: "axis_steps1".to_string(),
+                value: axis_steps1.to_string(),
+            });
         }
 
         if let Some(steps2) = axis_steps2 {
             if steps2.abs() > 16777215 {
-                return Err(DeviceError::CommandError(
-                    "Кроки для осі 2 повинні бути в діапазоні -16777215 до +16777215".to_string(),
-                ));
+                return Err(DeviceError::InvalidValue {
+                    parameter: "axis_steps2".to_string(),
+                    value: steps2.to_string(),
+                });
             }
         }
 
@@ -837,18 +855,27 @@ impl Device {
         axis_steps_a: i32, // Кількість кроків для осі A
         axis_steps_b: i32, // Кількість кроків для осі B
     ) -> Result<(), DeviceError> {
-        // Перевіряємо діапазон значень для тривалості і кроків
+        // Перевіряємо діапазон значень для тривалості
         if step_ms < 1 || step_ms > 16777215 {
-            return Err(DeviceError::CommandError(
-                "Тривалість повинна бути в діапазоні 1 - 16777215 мс".to_string(),
-            ));
+            return Err(DeviceError::InvalidValue {
+                parameter: "step_ms".to_string(),
+                value: step_ms.to_string(),
+            });
         }
 
-        if axis_steps_a.abs() > 16777215 || axis_steps_b.abs() > 16777215 {
-            return Err(DeviceError::CommandError(
-                "Кроки повинні бути в діапазоні -16777215 до +16777215 для обох осей A і B"
-                    .to_string(),
-            ));
+        // Перевіряємо діапазон значень для кроків осей A і B
+        if axis_steps_a.abs() > 16777215 {
+            return Err(DeviceError::InvalidValue {
+                parameter: "axis_steps_a".to_string(),
+                value: axis_steps_a.to_string(),
+            });
+        }
+
+        if axis_steps_b.abs() > 16777215 {
+            return Err(DeviceError::InvalidValue {
+                parameter: "axis_steps_b".to_string(),
+                value: axis_steps_b.to_string(),
+            });
         }
 
         // Формуємо команду "XM,Duration,AxisStepsA,AxisStepsB"
