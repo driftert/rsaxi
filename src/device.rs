@@ -1084,12 +1084,9 @@ impl Drop for Device {
     fn drop(&mut self) {
         // Вимикаємо мотори перед відключенням пристрою
         self.wait_for_motors();
-        if self.motor1_enabled || self.motor2_enabled {
-            if let Err(e) = self.disable_motors() {
-                error!("Не вдалося вимкнути мотори: {:?}", e);
-            }
+        if let Err(e) = self.disable_motors() {
+            error!("Не вдалося вимкнути мотори: {:?}", e);
         }
-
         self.disconnect();
         info!("Пристрій відключено, мотори вимкнено.");
     }
