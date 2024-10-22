@@ -156,7 +156,7 @@ impl Axidraw {
         let mut last_position = Point::new(0.0, 0.0);
 
         // Ітерація по кожному шляху в MultiLineString
-        for line_string in &drawing.paths.0 {
+        for (i, line_string) in drawing.paths.0.iter().enumerate() {
             if line_string.0.is_empty() {
                 continue;
             }
@@ -187,11 +187,13 @@ impl Axidraw {
             // Оновлюємо останню позицію до кінцевої точки поточного шляху
             last_position = last_point;
 
-            // Перевіряємо, чи відстань між поточною і наступною точкою менша за EPSILON
-            if let Some(next_path) = drawing.paths.0.iter().nth(1) {
+            // Перевіряємо, чи є наступний шлях
+            if let Some(next_path) = drawing.paths.0.get(i + 1) {
+                // Отримуємо першу точку наступного шляху
                 let next_coord = next_path.0[0];
                 let next_point = Point::new(next_coord.x, next_coord.y);
 
+                // Порівнюємо останню точку поточного шляху з першою точкою наступного шляху
                 if last_position.distance(&next_point) > EPSILON {
                     // Піднімаємо перо після завершення шляху тільки якщо наступна точка далеко
                     self.device.pen_up()?;
@@ -213,7 +215,11 @@ impl Axidraw {
 
         // Повертаємося до початкової позиції (0, 0) з обчисленими кроками і частотою
         self.device.pen_up()?;
-        self.device.home(step_frequency, None, None)?;
+
+        // Виконуємо команду home і ігноруємо помилки
+        if let Err(e) = self.device.home(step_frequency, None, None) {
+            debug!("Помилка при поверненні до початкової позиції: {:?}", e);
+        }
 
         Ok(())
     }
