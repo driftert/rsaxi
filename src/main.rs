@@ -1,6 +1,7 @@
 use anyhow::Result;
 use axidraw::{AxiDrawModel, Axidraw, Options};
 use env_logger::Env;
+use font::{roman::Roman, variant::Simplex};
 use geo::{Coord, LineString, MultiLineString};
 
 // Імпортуємо модулі
@@ -13,6 +14,7 @@ mod text;
 
 // Імпортуємо необхідні компоненти з модулів
 use drawing::Drawing;
+use text::Text;
 
 fn main() -> Result<()> {
     // Ініціалізація логування з рівнем за замовчуванням "info"
@@ -26,6 +28,13 @@ fn main() -> Result<()> {
 
     // Ініціалізація Axidraw з вказаними опціями
     let mut axidraw = Axidraw::new(options)?;
+    let roman_simplex = Roman::new().simplex()?;
+    let text = Text::builder()
+        .content("H")
+        .font(roman_simplex)
+        .scale(1.0)
+        .spacing(0.5)
+        .build()?;
 
     // Створення малюнка з двома лініями
     let lines = MultiLineString(vec![

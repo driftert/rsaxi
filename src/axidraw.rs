@@ -1,9 +1,12 @@
+use std::f64::EPSILON;
+
 use geo::Point;
 use log::{debug, info};
 
 use crate::device::{Device, DeviceError, DeviceOptions, StepMode};
 use crate::drawing::Drawing;
 use crate::motion::plan::Plan;
+use crate::motion::point::PointExtension;
 
 /// Константи для налаштування AxiDraw.
 const TIMESLICE_MS: i32 = 100;
@@ -11,11 +14,11 @@ const MICROSTEPPING_MODE: u32 = 1;
 const PEN_UP_POSITION: i32 = 60; // Позиція піднятої ручки за замовчуванням
 const PEN_UP_SPEED: i32 = 150; // Швидкість підйому ручки за замовчуванням
 const PEN_UP_DELAY: i32 = 0; // Затримка після підняття ручки
-const PEN_DOWN_POSITION: i32 = 40; // Позиція опущеної ручки за замовчуванням
+const PEN_DOWN_POSITION: i32 = 30; // Позиція опущеної ручки за замовчуванням
 const PEN_DOWN_SPEED: i32 = 150; // Швидкість опускання ручки за замовчуванням
 const PEN_DOWN_DELAY: i32 = 0; // Затримка після опускання ручки
-const ACCELERATION: f64 = 20.0; // Прискорення за замовчуванням
-const MAX_VELOCITY: f64 = 40.0; // Швидкість малювання за замовчуванням
+const ACCELERATION: f64 = 16.0; // Прискорення за замовчуванням
+const MAX_VELOCITY: f64 = 20.0; // Швидкість малювання за замовчуванням
 const CORNER_FACTOR: f64 = 0.001; // Коефіцієнт для обробки кутів у плануванні руху
 
 /// Структура, що представляє опції налаштування для AxiDraw.
@@ -28,7 +31,7 @@ pub struct Options {
     pub pen_down_speed: i32,         // Швидкість опускання механізму підйому ручки.
     pub pen_down_delay: i32,         // Затримка після опускання ручки (в мілісекундах).
     pub acceleration: f64,           // Швидкість прискорення/гальмування..
-    pub max_velocity: f64,           //Швидкість малювання за замовчуванням.
+    pub max_velocity: f64,           // Швидкість малювання за замовчуванням.
     pub corner_factor: f64,          // Коефіцієнт для обробки кутів у плануванні руху.
     pub model: AxiDrawModel,         // Вибір моделі апаратного забезпечення AxiDraw.
     pub port: Option<String>,        // Вказати USB-порт або AxiDraw для використання.
@@ -184,8 +187,18 @@ impl Axidraw {
             // Оновлюємо останню позицію до кінцевої точки поточного шляху
             last_position = last_point;
 
-            // Піднімаємо перо після завершення шляху
-            self.device.pen_up()?;
+            // Перевіряємо, чи відстань між поточною і наступною точкою менша за EPSILON
+            if let Some(next_path) = drawing.paths.0.iter().nth(1) {
+                let next_coord = next_path.0[0];
+                let next_point = Point::new(next_coord.x, next_coord.y);
+
+                if last_position.distance(&next_point) > EPSILON {
+                    // Піднімаємо перо після завершення шляху тільки якщо наступна точка далеко
+                    self.device.pen_up()?;
+                } else {
+                    debug!("Наступна точка близько, не підіймаємо перо.");
+                }
+            }
         }
 
         // Обчислюємо кількість кроків для повернення на початкову позицію (0, 0)
@@ -199,6 +212,7 @@ impl Axidraw {
         let step_frequency = step_frequency.clamp(2, 25000);
 
         // Повертаємося до початкової позиції (0, 0) з обчисленими кроками і частотою
+        self.device.pen_up()?;
         self.device.home(step_frequency, None, None)?;
 
         Ok(())
@@ -269,7 +283,7 @@ impl Axidraw {
                 .stepper_move_mixed(step_ms as u32, sx as i32, sy as i32)?;
 
             // Очікуємо завершення руху
-            self.wait_for_motors()?;
+            // self.wait_for_motors()?;
 
             // Збільшуємо час
             t += step_s;

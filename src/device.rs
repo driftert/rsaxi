@@ -139,22 +139,22 @@ impl Device {
     /// # Повертає:
     /// - `Result<(), DeviceError>`: Повертає Ok у випадку успіху або помилку при невдачі.
     fn configure(&mut self) -> Result<(), DeviceError> {
-        let servo_min = 7500;
-        let servo_max = 28000;
+        let servo_min = 7500.0;
+        let servo_max = 28000.0;
 
         // Розрахунок позиції підйому ручки
-        let pen_up_position = self.pen_up_position / 100;
+        let pen_up_position = self.pen_up_position as f64 / 100.0;
         let pen_up_position = servo_min + (servo_max - servo_min) * pen_up_position;
 
         // Розрахунок позиції опускання ручки
-        let pen_down_position = self.pen_down_position / 100;
+        let pen_down_position = self.pen_down_position as f64 / 100.0;
         let pen_down_position = servo_min + (servo_max - servo_min) * pen_down_position;
 
         // Відправка команд для конфігурації позицій і швидкостей
-        self.command(&format!("SC,4,{}", pen_up_position))?;
-        self.command(&format!("SC,5,{}", pen_down_position))?;
-        self.command(&format!("SC,11,{}", self.pen_up_speed * 5))?;
-        self.command(&format!("SC,12,{}", self.pen_down_speed * 5))?;
+        self.command(&format!("SC,4,{}", pen_up_position as i32))?;
+        self.command(&format!("SC,5,{}", pen_down_position as i32))?;
+        self.command(&format!("SC,11,{}", (self.pen_up_speed * 5) as i32))?;
+        self.command(&format!("SC,12,{}", (self.pen_down_speed * 5) as i32))?;
 
         Ok(())
     }
