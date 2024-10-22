@@ -754,7 +754,6 @@ impl Device {
             cmd.push_str(&format!(",{}", pos2));
         }
 
-        debug!("Відправлення команди: {}", cmd);
         self.command(&cmd)?;
         info!("Команда HM виконана успішно");
 
@@ -855,7 +854,6 @@ impl Device {
         // Формуємо команду "XM,Duration,AxisStepsA,AxisStepsB"
         let cmd = format!("XM,{},{},{}", step_ms, axis_steps_a, axis_steps_b);
 
-        debug!("Відправлення команди: {}", cmd);
         self.command(&cmd)?;
         info!("Команда XM виконана успішно");
 
@@ -886,7 +884,6 @@ impl Device {
 
         let cmd = format!("EM,{},{}", enable1, enable2);
 
-        debug!("Відправлення команди: {}", cmd);
         let response = self.command(&cmd)?;
         info!("Команда EM виконана: {}", response.trim());
 
@@ -895,6 +892,24 @@ impl Device {
         self.step_mode = mode;
 
         Ok(response)
+    }
+
+    /// Очікує завершення руху двигунів.
+    fn wait_for_motors(&mut self) -> Result<(), DeviceError> {
+        loop {
+            // Отримуємо статус моторів
+            let (motor1_status, motor2_status) = self.motor_status()?;
+
+            // Якщо обидва мотори зупинилися, виходимо з циклу
+            if !motor1_status.moving && !motor2_status.moving {
+                break;
+            }
+
+            // Додаємо невелику затримку перед наступною перевіркою
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        Ok(())
     }
 
     /// Вимкнення моторів.
@@ -979,37 +994,41 @@ impl Device {
     pub fn motor_status(&mut self) -> Result<(MotorStatus, MotorStatus), DeviceError> {
         let cmd = "QM";
 
-        debug!("Відправлення команди: {}", cmd);
+        // Надсилаємо команду
         let response = self.command(cmd)?;
         debug!("Отримано відповідь: {}", response.trim());
 
-        let parts: Vec<&str> = response.trim().split(',').collect();
+        // Шукаємо рядок, що починається з "QM"
+        if let Some(main_line) = response.lines().find(|line| line.trim().starts_with("QM")) {
+            let fields: Vec<&str> = main_line.trim().split(',').collect();
 
-        if parts.len() == 5 && parts[0] == "QM" {
-            let command_status = parts[1].trim().parse::<u8>().unwrap_or(0) != 0;
-            let motor1_moving = parts[2].trim().parse::<u8>().unwrap_or(0) != 0;
-            let motor2_moving = parts[3].trim().parse::<u8>().unwrap_or(0) != 0;
-            let fifo_empty = parts[4].trim().parse::<u8>().unwrap_or(1) == 0;
+            if fields.len() == 5 && fields[0] == "QM" {
+                let command_status = fields[1].trim().parse::<u8>().unwrap_or(0) != 0;
+                let motor1_moving = fields[2].trim().parse::<u8>().unwrap_or(0) != 0;
+                let motor2_moving = fields[3].trim().parse::<u8>().unwrap_or(0) != 0;
+                let fifo_empty = fields[4].trim().parse::<u8>().unwrap_or(1) == 0;
 
-            let motor1_status = MotorStatus {
-                executing_command: command_status,
-                moving: motor1_moving,
-                fifo_empty,
-            };
+                let motor1_status = MotorStatus {
+                    executing_command: command_status,
+                    moving: motor1_moving,
+                    fifo_empty,
+                };
 
-            let motor2_status = MotorStatus {
-                executing_command: command_status,
-                moving: motor2_moving,
-                fifo_empty,
-            };
+                let motor2_status = MotorStatus {
+                    executing_command: command_status,
+                    moving: motor2_moving,
+                    fifo_empty,
+                };
 
-            Ok((motor1_status, motor2_status))
-        } else {
-            error!("Некоректна відповідь від QM: {}", response.trim());
-            Err(DeviceError::InvalidResponse(
-                "Некоректна відповідь від QM".to_string(),
-            ))
+                return Ok((motor1_status, motor2_status));
+            }
         }
+
+        // У випадку некоректної відповіді
+        error!("Некоректна відповідь від QM: {}", response.trim());
+        Err(DeviceError::InvalidResponse(
+            "Некоректна відповідь від QM".to_string(),
+        ))
     }
 
     /// Зчитує глобальні позиції кроків моторів 1 та 2 (QS).
@@ -1064,6 +1083,7 @@ impl Device {
 impl Drop for Device {
     fn drop(&mut self) {
         // Вимикаємо мотори перед відключенням пристрою
+        self.wait_for_motors();
         if self.motor1_enabled || self.motor2_enabled {
             if let Err(e) = self.disable_motors() {
                 error!("Не вдалося вимкнути мотори: {:?}", e);

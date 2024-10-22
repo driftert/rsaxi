@@ -216,10 +216,8 @@ impl Axidraw {
         // Повертаємося до початкової позиції (0, 0) з обчисленими кроками і частотою
         self.device.pen_up()?;
 
-        // Виконуємо команду home і ігноруємо помилки
-        if let Err(e) = self.device.home(step_frequency, None, None) {
-            debug!("Помилка при поверненні до початкової позиції: {:?}", e);
-        }
+        // Виконуємо команду home
+        self.device.home(step_frequency, None, None)?;
 
         Ok(())
     }
@@ -288,29 +286,8 @@ impl Axidraw {
             self.device
                 .stepper_move_mixed(step_ms as u32, sx as i32, sy as i32)?;
 
-            // Очікуємо завершення руху
-            // self.wait_for_motors()?;
-
             // Збільшуємо час
             t += step_s;
-        }
-
-        Ok(())
-    }
-
-    /// Очікує завершення руху двигунів.
-    fn wait_for_motors(&mut self) -> Result<(), anyhow::Error> {
-        loop {
-            // Отримуємо статус моторів
-            let (motor1_status, motor2_status) = self.device.motor_status()?;
-
-            // Якщо обидва мотори зупинилися, виходимо з циклу
-            if !motor1_status.moving && !motor2_status.moving {
-                break;
-            }
-
-            // Додаємо невелику затримку перед наступною перевіркою
-            std::thread::sleep(std::time::Duration::from_millis(10));
         }
 
         Ok(())
