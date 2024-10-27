@@ -1,7 +1,7 @@
 use geo::{LineString, MultiLineString, Point};
 use log::{debug, error, info};
 
-use crate::font::error::FontError;
+use crate::text::font::error::FontError;
 
 /// Представляє окремий гліф (символ) шрифту Hershey як набір шляхів.
 #[derive(Debug, Clone)]

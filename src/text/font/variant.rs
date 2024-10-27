@@ -1,6 +1,6 @@
 use log::{debug, error};
 
-use crate::font::cache::Fonts;
+use crate::text::font::cache::Fonts;
 
 use super::{error::FontError, font::Font, group::FontGroup};
 

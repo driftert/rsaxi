@@ -1,11 +1,13 @@
 use crate::drawing::Drawable;
-use crate::font::font::Font;
-use crate::font::{error::FontError, glyph::Glyph};
+use crate::text::font::error::FontError;
 use anyhow::Result;
 use geo::algorithm::scale::Scale;
 use geo::algorithm::translate::Translate;
 use geo::{MultiLineString, Point};
 use log::{debug, info};
+
+use super::font::font::Font;
+use super::font::glyph::Glyph;
 
 /// Структура для представлення тексту як набору гліфів для малювання.
 pub struct Text {

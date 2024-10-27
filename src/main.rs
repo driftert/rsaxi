@@ -8,7 +8,6 @@ use log::{error, info};
 mod axidraw;
 mod device;
 mod drawing;
-mod font;
 mod motion;
 mod text;
 
