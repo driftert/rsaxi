@@ -1,4 +1,4 @@
-use geo::{LineString, MultiLineString, Point};
+use geo::{coord, LineString, MultiLineString, Point, Rect};
 use log::{debug, error, info};
 
 use crate::text::font::error::FontError;
@@ -6,10 +6,12 @@ use crate::text::font::error::FontError;
 /// Представляє окремий гліф (символ) шрифту Hershey як набір шляхів.
 #[derive(Debug, Clone)]
 pub struct Glyph {
-    pub code: u32,                   // Код, який представляє цей гліф.
+    pub charcode: Option<u32>,       // Unicode код символа.
     pub paths: MultiLineString<f64>, // Шляхи, що визначають гліф.
-    pub width: f64,                  // Ширина гліфа.
-    pub unicode_code: Option<u32>,   // Опційний Unicode код для цього гліфа.
+    pub xmin: f64,                   // Мінімальне значення x для гліфа.
+    pub xmax: f64,                   // Максимальне значення x для гліфа.
+    pub ymin: f64,                   // Мінімальне значення y для гліфа.
+    pub ymax: f64,                   // Максимальне значення y для гліфа.
 }
 
 impl Glyph {
@@ -17,26 +19,46 @@ impl Glyph {
     ///
     /// # Аргументи
     ///
-    /// * `code` - код гліфа.
     /// * `paths` - шляхи, що визначають гліф.
-    /// * `width` - ширина гліфа.
-    /// * `unicode_code` - опційний Unicode код для цього гліфа.
+    /// * `charcode` - опційний Unicode код для цього гліфа.
+    /// * `xmin` - мінімальне значення x для гліфа.
+    /// * `xmax` - максимальне значення x для гліфа.
+    /// * `ymin` - мінімальне значення y для гліфа.
+    /// * `ymax` - максимальне значення y для гліфа.
     ///
     /// # Повертає
     ///
     /// * `Self` - новий екземпляр гліфа.
     pub fn new(
-        code: u32,
         paths: MultiLineString<f64>,
-        width: f64,
-        unicode_code: Option<u32>,
+        charcode: Option<u32>,
+        xmin: f64,
+        xmax: f64,
+        ymin: f64,
+        ymax: f64,
     ) -> Self {
         Glyph {
-            code,
+            charcode,
             paths,
-            width,
-            unicode_code,
+            xmin,
+            xmax,
+            ymin,
+            ymax,
         }
+    }
+
+    /// Повертає обмежувальну рамку гліфа.
+    ///
+    /// # Повертає
+    ///
+    /// * `Rect<f64>` - Прямокутник, що представляє обмежувальну рамку гліфа.
+    pub fn bbox(&self) -> Rect<f64> {
+        // Створюємо обмежувальну рамку, використовуючи координати xmin, ymin, xmax, ymax
+        let rect = Rect::new(
+            coord! { x: self.xmin, y: self.ymin },
+            coord! { x: self.xmax, y: self.ymax },
+        );
+        rect
     }
 
     /// Парсить окремий гліф з рядка і застосовує мапу Unicode для відповідної групи шрифтів.
@@ -44,12 +66,12 @@ impl Glyph {
     /// # Аргументи
     ///
     /// * `glyph` - рядок, що містить інформацію про гліф.
-    /// * `unicode_map` - мапа відповідностей Hershey кодів та Unicode кодів для даної групи.
+    /// * `cmap` - мапа відповідностей Hershey кодів та Unicode кодів для даної групи.
     ///
     /// # Повертає
     ///
     /// * `Result<Self, FontError>` - новий гліф або помилка парсингу.
-    pub fn from_line(glyph: &str, unicode_map: &phf::Map<u32, u32>) -> Result<Self, FontError> {
+    pub fn from_line(glyph: &str, cmap: &phf::Map<u32, u32>) -> Result<Self, FontError> {
         debug!("Парсимо гліф із рядка: {}", glyph);
 
         // Перевіряємо мінімальну довжину рядка, необхідну для парсингу.
@@ -80,10 +102,10 @@ impl Glyph {
         info!("Гліф для символа '{}' успішно оброблено.", character);
 
         // Перевіряємо, чи існує відповідний Unicode код для цього Hershey коду
-        let unicode_code = unicode_map.get(&character).copied();
+        let charcode = cmap.get(&character).copied();
         debug!(
             "Для Hershey коду '{}' знайдено Unicode код: {:?}",
-            character, unicode_code
+            character, charcode
         );
 
         // Парсимо кількість вершин (символи з 5 до 8).
@@ -111,12 +133,15 @@ impl Glyph {
         })? as i32)
             - ('R' as i32);
 
-        let glyph_width = (right_margin - left_margin) as f64;
+        info!("Ліва межа: {}, Права межа: {}", left_margin, right_margin);
 
-        info!(
-            "Ліва межа: {}, Права межа: {}, Ширина гліфа: {}",
-            left_margin, right_margin, glyph_width
-        );
+        // Обчислюємо xmin та xmax
+        let xmin = left_margin as f64;
+        let xmax = right_margin as f64;
+
+        // Обчислюємо ymin та ymax
+        let mut ymin = f64::MAX;
+        let mut ymax = f64::MIN;
 
         // Парсимо координати точок і шляхи.
         let mut paths = Vec::new(); // Містить шляхи для поточного гліфа.
@@ -163,7 +188,10 @@ impl Glyph {
                 );
                 let x_coordinate = (x_char as i32) - ('R' as i32);
                 let y_coordinate = (y_char as i32) - ('R' as i32);
-                let point = Point::new(x_coordinate as f64, y_coordinate as f64);
+                let point = Point::new((x_coordinate as f64) - xmin, y_coordinate as f64);
+
+                ymin = ymin.min(point.y());
+                ymax = ymax.max(point.y());
 
                 if is_pen_down {
                     debug!("Додана точка: x = {}, y = {}", x_coordinate, y_coordinate);
@@ -192,12 +220,14 @@ impl Glyph {
 
         info!("Гліф успішно парсено для символа '{}'.", character);
 
-        // Повертаємо новий гліф зі списком шляхів та шириною.
+        // Повертаємо новий гліф зі списком шляхів, межами та опційним кодом символа.
         Ok(Glyph::new(
-            character,
-            MultiLineString(paths), // Використовуємо конструктор без From
-            glyph_width,
-            unicode_code,
+            MultiLineString(paths),
+            charcode,
+            xmin,
+            xmax,
+            ymin,
+            ymax,
         ))
     }
 }

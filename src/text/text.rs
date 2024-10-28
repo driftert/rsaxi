@@ -77,7 +77,7 @@ impl Drawable for Text {
             paths.extend(translated_glyph.0.into_iter());
 
             // Оновлюємо позицію X для наступного гліфу
-            current_x += glyph.width * self.scale;
+            current_x += glyph.bbox().width() * self.scale;
         }
 
         Ok(MultiLineString(paths))

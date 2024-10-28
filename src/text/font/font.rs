@@ -76,7 +76,7 @@ impl Font {
     ///
     /// * `name` - назва шрифту.
     /// * `glyphs` - зріз рядків, кожен з яких представляє гліф.
-    /// * `unicode_map` - мапа відповідностей Hershey кодів та Unicode кодів для даної групи.
+    /// * `cmap` - мапа відповідностей Hershey кодів та Unicode кодів для даної групи.
     ///
     /// # Повертає
     ///
@@ -84,15 +84,29 @@ impl Font {
     pub fn from_glyphs(
         name: &str,
         glyphs: &[&str],
-        unicode_map: &phf::Map<u32, u32>,
+        cmap: &phf::Map<u32, u32>,
     ) -> Result<Self, FontError> {
         info!("Створення шрифту '{}' з наданих гліфів.", name);
 
         let mut glyph_map = HashMap::new();
         for line in glyphs {
-            // Парсимо кожний рядок гліфа, передаючи unicode_map.
-            let glyph = Glyph::from_line(line, unicode_map)?;
-            glyph_map.insert(glyph.code, glyph);
+            // Парсимо кожний рядок гліфа, передаючи cmap.
+            match Glyph::from_line(line, cmap) {
+                Ok(glyph) => {
+                    // Перевіряємо, чи визначено charcode. Якщо немає, пропускаємо гліф.
+                    if let Some(charcode) = glyph.charcode {
+                        glyph_map.insert(charcode, glyph);
+                    } else {
+                        debug!(
+                            "Гліф пропущено, оскільки charcode не було визначено для лінії: '{}'.",
+                            line
+                        );
+                    }
+                }
+                Err(e) => {
+                    error!("Помилка парсингу гліфа для лінії '{}': {:?}", line, e);
+                }
+            }
         }
 
         debug!(
@@ -108,14 +122,14 @@ impl Font {
     ///
     /// # Аргументів
     ///
-    /// * `unicode_code` - Unicode код, для якого потрібно знайти гліф.
+    /// * `charcode` - Unicode код, для якого потрібно знайти гліф.
     ///
     /// # Повертає
     ///
     /// * `Option<&Glyph>` - посилання на гліф або `None`, якщо гліф не знайдено.
-    pub fn glyph_by_unicode(&self, unicode_code: u32) -> Option<&Glyph> {
+    pub fn glyph_by_unicode(&self, charcode: u32) -> Option<&Glyph> {
         self.glyphs
             .values()
-            .find(|glyph| glyph.unicode_code == Some(unicode_code))
+            .find(|glyph| glyph.charcode == Some(charcode))
     }
 }
