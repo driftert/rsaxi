@@ -15,6 +15,15 @@ pub struct Glyph {
 }
 
 impl Glyph {
+    pub const SPACE: Glyph = Glyph {
+        charcode: Some(32),
+        paths: MultiLineString(vec![]), // Порожній масив для пробілу
+        xmin: -0.5,
+        xmax: 0.5,
+        ymin: -0.5,
+        ymax: 0.5,
+    };
+
     /// Створює новий гліф із символом, шляхами та опційним Unicode кодом.
     ///
     /// # Аргументи
