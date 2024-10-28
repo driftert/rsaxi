@@ -252,7 +252,7 @@ impl Glyph {
                 );
                 let x_coordinate = (x_char as i32) - ('R' as i32);
                 let y_coordinate = (y_char as i32) - ('R' as i32);
-                let point = Point::new((x_coordinate as f64) - xmin, y_coordinate as f64);
+                let point = Point::new(x_coordinate as f64, y_coordinate as f64);
 
                 ymin = ymin.min(point.y());
                 ymax = ymax.max(point.y());
@@ -293,5 +293,63 @@ impl Glyph {
             ymin,
             ymax,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use env_logger;
+    use phf::phf_map;
+
+    fn init_logger() {
+        let _ = env_logger::builder()
+            .is_test(true)
+            .filter_level(log::LevelFilter::Debug)
+            .try_init();
+    }
+
+    #[test]
+    fn test_parse_glyph_a() {
+        init_logger();
+
+        // Визначаємо мапу для тесту
+        static TEST_CMAP: phf::Map<u32, u32> = phf_map! {
+            8u32 => 72u32, // Hershey код 8 -> 'H'
+        };
+
+        // Приклад рядка гліфа для букви 'H'
+        let glyph_line = "    8  9MWOMOV RUMUV ROQUQ";
+
+        // Парсимо гліф
+        let glyph = Glyph::from_line(glyph_line, &TEST_CMAP).expect("Парсинг гліфа не вдався");
+        print!("{:?}", glyph);
+
+        // Перевіряємо основні параметри гліфа
+        assert_eq!(glyph.charcode, Some(72));
+        assert!(!glyph.paths.0.is_empty());
+
+        // Визначаємо очікувані шляхи
+        let expected_paths = vec![
+            LineString::from(vec![Point::new(-3.0, -5.0), Point::new(-3.0, 4.0)]),
+            LineString::from(vec![Point::new(3.0, -5.0), Point::new(3.0, 4.0)]),
+            LineString::from(vec![Point::new(-3.0, -1.0), Point::new(3.0, -1.0)]),
+        ];
+
+        // Перевіряємо кількість шляхів
+        assert_eq!(glyph.paths.0.len(), expected_paths.len());
+
+        // Перевіряємо кожен шлях окремо
+        for (parsed, expected) in glyph.paths.0.iter().zip(expected_paths.iter()) {
+            assert_eq!(
+                parsed.0.len(),
+                expected.0.len(),
+                "Кількість точок у шляхах не співпадає"
+            );
+            for (p, e) in parsed.0.iter().zip(expected.0.iter()) {
+                assert_eq!(p.x, e.x, "Координата X точки не співпадає");
+                assert_eq!(p.y, e.y, "Координата Y точки не співпадає");
+            }
+        }
     }
 }
