@@ -1,4 +1,4 @@
-use geo::{coord, LineString, MultiLineString, Point, Rect};
+use geo::{coord, AffineOps, AffineTransform, LineString, MultiLineString, Point, Rect};
 use log::{debug, error, info};
 
 use crate::text::font::error::FontError;
@@ -68,6 +68,61 @@ impl Glyph {
             coord! { x: self.xmax, y: self.ymax },
         );
         rect
+    }
+
+    /// Зміщує гліф на задані відстані по осях X та Y.
+    ///
+    /// # Аргументи
+    ///
+    /// * `dx` - Відстань зміщення по осі X.
+    /// * `dy` - Відстань зміщення по осі Y.
+    ///
+    /// # Повертає
+    ///
+    /// * `Self` - Новий екземпляр гліфа зі зміщеними шляхами та оновленими межами.
+    pub fn offset(&self, dx: f64, dy: f64) -> Self {
+        // Створюємо афінну трансформацію для зміщення
+        let transform = AffineTransform::new(1.0, 0.0, 0.0, 1.0, dx, dy);
+
+        // Застосовуємо трансформацію до всіх шляхів
+        let new_paths = self.paths.affine_transform(&transform);
+
+        // Повертаємо новий гліф зі зміщеними шляхами та оновленими межами
+        Glyph {
+            charcode: self.charcode,
+            paths: new_paths,
+            xmin: self.xmin + dx,
+            xmax: self.xmax + dx,
+            ymin: self.ymin + dy,
+            ymax: self.ymax + dy,
+        }
+    }
+
+    /// Масштує гліф на заданий коефіцієнт.
+    ///
+    /// # Аргументи
+    ///
+    /// * `factor` - Коефіцієнт масштабу.
+    ///
+    /// # Повертає
+    ///
+    /// * `Self` - Новий екземпляр гліфа з масштабованими шляхами та оновленими межами.
+    pub fn scale(&self, factor: f64) -> Self {
+        // Створюємо афінну трансформацію для масштабу
+        let transform = AffineTransform::new(factor, 0.0, 0.0, factor, 0.0, 0.0);
+
+        // Застосовуємо трансформацію до всіх шляхів
+        let new_paths = self.paths.affine_transform(&transform);
+
+        // Повертаємо новий гліф зі масштабованими шляхами та оновленими межами
+        Glyph {
+            charcode: self.charcode,
+            paths: new_paths,
+            xmin: self.xmin * factor,
+            xmax: self.xmax * factor,
+            ymin: self.ymin * factor,
+            ymax: self.ymax * factor,
+        }
     }
 
     /// Парсить окремий гліф з рядка і застосовує мапу Unicode для відповідної групи шрифтів.
