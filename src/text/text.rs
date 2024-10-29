@@ -77,13 +77,20 @@ pub struct Text {
 }
 
 impl Drawable for Text {
-    /// Повертає скомпільовані шляхи тексту.
+    /// Повертає скомпільовані шляхи для всіх гліфів тексту.
     ///
     /// # Повертає
     ///
-    /// * `Result<MultiLineString<f64>>` - Скомпільовані шляхи тексту або помилка.
+    /// * `Result<MultiLineString<f64>>` - об'єднані шляхи всіх гліфів тексту,
+    ///   представлені як `MultiLineString<f64>`, або помилка, якщо шляхи не вдалося скомпілювати.
     fn draw(&self) -> Result<MultiLineString<f64>> {
-        todo!()
+        let paths: Vec<_> = self
+            .glyphs
+            .iter()
+            .flat_map(|glyph| glyph.paths.clone())
+            .collect();
+
+        Ok(MultiLineString(paths))
     }
 }
 
