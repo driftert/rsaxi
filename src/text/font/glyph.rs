@@ -1,4 +1,4 @@
-use geo::{coord, AffineOps, AffineTransform, LineString, MultiLineString, Point, Rect, Scale};
+use geo::{coord, AffineOps, AffineTransform, LineString, MultiLineString, Point, Rect};
 use log::{debug, error, info};
 
 use crate::text::font::error::FontError;
