@@ -82,7 +82,7 @@ impl Glyph {
     /// * `Self` - Новий екземпляр гліфа зі зміщеними шляхами та оновленими межами.
     pub fn offset(&self, dx: f64, dy: f64) -> Self {
         // Створюємо афінну трансформацію для зміщення
-        let transform = AffineTransform::new(1.0, 0.0, 0.0, 1.0, dx, dy);
+        let transform = AffineTransform::translate(dx, dy);
 
         // Застосовуємо трансформацію до всіх шляхів
         let new_paths = self.paths.affine_transform(&transform);
@@ -351,5 +351,121 @@ mod tests {
                 assert_eq!(p.y, e.y, "Координата Y точки не співпадає");
             }
         }
+    }
+
+    #[test]
+    fn test_parse_glyph_a_with_x_offset() {
+        init_logger();
+
+        // Define the character map for the test
+        static TEST_CMAP: phf::Map<u32, u32> = phf_map! {
+            8u32 => 72u32, // Hershey code 8 -> 'H'
+        };
+
+        // Sample glyph line for the letter 'H'
+        let glyph_line = "    8  9MWOMOV RUMUV ROQUQ";
+
+        // Parse the glyph
+        let glyph = Glyph::from_line(glyph_line, &TEST_CMAP).expect("Failed to parse glyph");
+        println!("{:?}", glyph);
+
+        // Verify basic glyph parameters
+        assert_eq!(glyph.charcode, Some(72));
+        assert!(!glyph.paths.0.is_empty());
+
+        // Define expected paths before offset
+        let expected_paths_before_offset = vec![
+            LineString::from(vec![Point::new(-3.0, -5.0), Point::new(-3.0, 4.0)]),
+            LineString::from(vec![Point::new(3.0, -5.0), Point::new(3.0, 4.0)]),
+            LineString::from(vec![Point::new(-3.0, -1.0), Point::new(3.0, -1.0)]),
+        ];
+
+        // Verify paths before offset
+        assert_eq!(glyph.paths.0.len(), expected_paths_before_offset.len());
+        for (parsed, expected) in glyph
+            .paths
+            .0
+            .iter()
+            .zip(expected_paths_before_offset.iter())
+        {
+            assert_eq!(
+                parsed.0.len(),
+                expected.0.len(),
+                "Number of points in path does not match"
+            );
+            for (p, e) in parsed.0.iter().zip(expected.0.iter()) {
+                assert_eq!(
+                    p.x, e.x,
+                    "X coordinate of point does not match before offset"
+                );
+                assert_eq!(
+                    p.y, e.y,
+                    "Y coordinate of point does not match before offset"
+                );
+            }
+        }
+
+        // Define offset values (only on x-axis)
+        let dx = 2.0;
+        let dy = 0.0;
+
+        // Apply the offset
+        let offset_glyph = glyph.offset(dx, dy);
+        println!("Offset: {:?}", offset_glyph);
+
+        // Define expected paths after x offset
+        let expected_paths_after_x_offset = vec![
+            LineString::from(vec![Point::new(-1.0, -5.0), Point::new(-1.0, 4.0)]),
+            LineString::from(vec![Point::new(5.0, -5.0), Point::new(5.0, 4.0)]),
+            LineString::from(vec![Point::new(-1.0, -1.0), Point::new(5.0, -1.0)]),
+        ];
+
+        // Verify paths after x offset
+        assert_eq!(
+            offset_glyph.paths.0.len(),
+            expected_paths_after_x_offset.len()
+        );
+        for (parsed, expected) in offset_glyph
+            .paths
+            .0
+            .iter()
+            .zip(expected_paths_after_x_offset.iter())
+        {
+            assert_eq!(
+                parsed.0.len(),
+                expected.0.len(),
+                "Number of points in path does not match after x offset"
+            );
+            for (p, e) in parsed.0.iter().zip(expected.0.iter()) {
+                assert_eq!(
+                    p.x, e.x,
+                    "X coordinate of point does not match after x offset"
+                );
+                assert_eq!(
+                    p.y, e.y,
+                    "Y coordinate of point should remain unchanged after x offset"
+                );
+            }
+        }
+
+        // Verify that only the x values of bounding box are offset
+        assert_eq!(
+            offset_glyph.xmin,
+            glyph.xmin + dx,
+            "xmin does not match after x offset"
+        );
+        assert_eq!(
+            offset_glyph.xmax,
+            glyph.xmax + dx,
+            "xmax does not match after x offset"
+        );
+        assert_eq!(
+            offset_glyph.ymin, glyph.ymin,
+            "ymin should remain unchanged after x offset"
+        );
+        assert_eq!(
+            offset_glyph.ymax, glyph.ymax,
+            "ymax should remain unchanged after x offset"
+        );
     }
 }
