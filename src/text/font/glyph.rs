@@ -1,4 +1,4 @@
-use geo::{coord, AffineOps, AffineTransform, LineString, MultiLineString, Point, Rect};
+use geo::{coord, AffineOps, AffineTransform, LineString, MultiLineString, Point, Rect, Scale};
 use log::{debug, error, info};
 
 use crate::text::font::error::FontError;
@@ -98,7 +98,7 @@ impl Glyph {
         }
     }
 
-    /// Масштує гліф на заданий коефіцієнт.
+    /// Масштує гліф на заданий коефіцієнт, зберігаючи пропорції відносно (0, 0).
     ///
     /// # Аргументи
     ///
@@ -108,20 +108,29 @@ impl Glyph {
     ///
     /// * `Self` - Новий екземпляр гліфа з масштабованими шляхами та оновленими межами.
     pub fn scale(&self, factor: f64) -> Self {
-        // Створюємо афінну трансформацію для масштабу
-        let transform = AffineTransform::new(factor, 0.0, 0.0, factor, 0.0, 0.0);
+        // Визначаємо точку орієнтації для масштабування (0, 0)
+        let origin = coord! { x: 0.0, y: 0.0 };
+
+        // Створюємо афінну трансформацію для масштабування з origin як точкою орієнтації
+        let scaling = AffineTransform::scale(factor, factor, origin);
 
         // Застосовуємо трансформацію до всіх шляхів
-        let new_paths = self.paths.affine_transform(&transform);
+        let new_paths = self.paths.affine_transform(&scaling);
+
+        // Оновлюємо обмежувальну рамку
+        let new_xmin = self.xmin * factor;
+        let new_xmax = self.xmax * factor;
+        let new_ymin = self.ymin * factor;
+        let new_ymax = self.ymax * factor;
 
         // Повертаємо новий гліф зі масштабованими шляхами та оновленими межами
         Glyph {
             charcode: self.charcode,
             paths: new_paths,
-            xmin: self.xmin * factor,
-            xmax: self.xmax * factor,
-            ymin: self.ymin * factor,
-            ymax: self.ymax * factor,
+            xmin: new_xmin,
+            xmax: new_xmax,
+            ymin: new_ymin,
+            ymax: new_ymax,
         }
     }
 
@@ -466,6 +475,87 @@ mod tests {
         assert_eq!(
             offset_glyph.ymax, glyph.ymax,
             "ymax should remain unchanged after x offset"
+        );
+    }
+
+    #[test]
+    fn test_scale_glyph_a() {
+        init_logger();
+
+        // Визначаємо мапу для тесту
+        static TEST_CMAP: phf::Map<u32, u32> = phf_map! {
+            8u32 => 72u32, // Hershey код 8 -> 'H'
+        };
+
+        // Приклад рядка гліфа для букви 'H'
+        let glyph_line = "    8  9MWOMOV RUMUV ROQUQ";
+
+        // Парсимо гліф
+        let glyph = Glyph::from_line(glyph_line, &TEST_CMAP).expect("Не вдалося розпарсити гліф");
+        println!("Оригінальний гліф: {:?}", glyph);
+
+        // Перевіряємо основні параметри гліфа
+        assert_eq!(glyph.charcode, Some(72));
+        assert!(!glyph.paths.0.is_empty());
+
+        // Коефіцієнт масштабу
+        let scale_factor = 2.0;
+
+        // Застосовуємо масштаб
+        let scaled_glyph = glyph.scale(scale_factor);
+        println!("Масштабований гліф: {:?}", scaled_glyph);
+
+        // Перевіряємо оновлені шляхи
+        let expected_scaled_paths = vec![
+            LineString::from(vec![Point::new(-6.0, -10.0), Point::new(-6.0, 8.0)]),
+            LineString::from(vec![Point::new(6.0, -10.0), Point::new(6.0, 8.0)]),
+            LineString::from(vec![Point::new(-6.0, -2.0), Point::new(6.0, -2.0)]),
+        ];
+
+        assert_eq!(scaled_glyph.paths.0.len(), expected_scaled_paths.len());
+        for (scaled_path, expected_path) in scaled_glyph
+            .paths
+            .0
+            .iter()
+            .zip(expected_scaled_paths.iter())
+        {
+            assert_eq!(
+                scaled_path.0.len(),
+                expected_path.0.len(),
+                "Кількість точок у шляхах не співпадає після масштабу"
+            );
+            for (scaled_point, expected_point) in scaled_path.0.iter().zip(expected_path.0.iter()) {
+                assert_eq!(
+                    scaled_point.x, expected_point.x,
+                    "Координата X точки не співпадає після масштабу"
+                );
+                assert_eq!(
+                    scaled_point.y, expected_point.y,
+                    "Координата Y точки не співпадає після масштабу"
+                );
+            }
+        }
+
+        // Перевіряємо обмежувальну рамку після масштабу
+        assert_eq!(
+            scaled_glyph.xmin,
+            glyph.xmin * scale_factor,
+            "xmin не співпадає після масштабу"
+        );
+        assert_eq!(
+            scaled_glyph.xmax,
+            glyph.xmax * scale_factor,
+            "xmax не співпадає після масштабу"
+        );
+        assert_eq!(
+            scaled_glyph.ymin,
+            glyph.ymin * scale_factor,
+            "ymin не співпадає після масштабу"
+        );
+        assert_eq!(
+            scaled_glyph.ymax,
+            glyph.ymax * scale_factor,
+            "ymax не співпадає після масштабу"
         );
     }
 }
