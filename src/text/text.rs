@@ -282,25 +282,21 @@ impl TextBuilder {
         }
 
         // Обробляємо кожен рядок з вирівнюванням та виправленням по ширині, якщо потрібно
-        let mut y_offset = 0.0;
+        let mut y_position = position.y();
         for line in lines {
-            let aligned_line = if justify && line.len() > 1 {
-                TextBuilder::justify_line(&line, width)
-            } else {
-                TextBuilder::align_line(&line, width, align)
-            };
+            let mut x_position = position.x();
+            for mut glyph in line {
+                let glyph_width = glyph.bbox().width();
 
-            // Зсув для кожного гліфа відповідно до початкової позиції
-            let mut x_offset = 0.0;
-            for mut glyph in aligned_line {
-                let width = glyph.bbox().width();
-                glyph = glyph.offset(position.x() + x_offset, position.y() - y_offset);
+                glyph = glyph.offset(x_position, y_position);
                 glyphs.push(glyph);
-                x_offset += width;
+
+                // Оновлюємо позицію для наступного гліфа в рядку
+                x_position += glyph_width;
             }
 
-            // Зсуваємо позицію для наступного рядка
-            y_offset += line_height;
+            // Зсуваємо `y_position` для наступного рядка
+            y_position -= line_height;
         }
 
         // Повертаємо об'єкт `Text` з усіма сформованими гліфами
