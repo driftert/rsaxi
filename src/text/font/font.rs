@@ -24,8 +24,6 @@ impl Font {
     ///
     /// * `Self` - новий екземпляр шрифту.
     fn new(name: String, mut glyphs: HashMap<u32, Glyph>) -> Self {
-        // Додаємо константу SPACE для символу пробілу (Unicode U+0020)
-        glyphs.insert(0x0020, Glyph::SPACE.clone());
         Font { name, glyphs }
     }
 

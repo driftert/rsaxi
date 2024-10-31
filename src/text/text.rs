@@ -242,36 +242,44 @@ impl TextBuilder {
         let mut line = Vec::new();
         let mut line_width = 0.0;
 
-        // Розбиваємо текст на слова для обробки переносу рядків
-        for word in content.split_whitespace() {
-            // Розраховуємо ширину слова з урахуванням масштабу
-            let word_width: f64 = word
-                .chars()
-                .filter_map(|c| font.glyph_by_unicode(c as u32))
-                .map(|g| g.bbox().width() * scale)
-                .sum();
+        // Обробка кожного символу послідовно, включаючи пробіли
+        for char in content.chars() {
+            if let Some(glyph) = font.glyph_by_unicode(char as u32) {
+                let scaled_glyph = glyph.scale(scale);
+                let glyph_width = scaled_glyph.bbox().width();
 
-            // Якщо ширина слова перевищує доступну ширину рядка, переносимо його на наступний рядок
-            if line_width + word_width > width {
-                lines.push(line);
-                line = Vec::new();
-                line_width = 0.0;
-            }
-
-            // Додаємо кожен символ слова до поточного рядка, масштабуючи за потреби
-            for char in word.chars() {
-                if let Some(glyph) = font.glyph_by_unicode(char as u32) {
-                    let scaled_glyph = glyph.scale(scale);
-                    let glyph_width = scaled_glyph.bbox().width();
-                    line.push(scaled_glyph);
-                    line_width += glyph_width;
+                // Якщо ширина рядка перевищує максимальну ширину, переносимо його на новий рядок
+                if line_width + glyph_width > width {
+                    lines.push(line);
+                    line = Vec::new();
+                    line_width = 0.0;
                 }
-            }
 
-            // Додаємо пробіл після слова, масштабуючи його ширину
-            line_width += Glyph::SPACE.scale(scale).bbox().width();
+                // Додаємо гліф до поточного рядка
+                line.push(scaled_glyph);
+                line_width += glyph_width;
+            } else if char == ' ' {
+                // Якщо символ — пробіл, додаємо пробіл як окремий гліф із шириною пробілу
+                let space_glyph = Glyph::SPACE.scale(scale);
+                let space_width = space_glyph.bbox().width();
+
+                // Якщо ширина рядка перевищує максимальну ширину, переносимо його на новий рядок
+                if line_width + space_width > width {
+                    lines.push(line);
+                    line = Vec::new();
+                    line_width = 0.0;
+                }
+
+                // Додаємо пробіл до поточного рядка
+                line.push(space_glyph);
+                line_width += space_width;
+            }
         }
-        lines.push(line);
+
+        // Додаємо останній рядок, якщо залишилися гліфи
+        if !line.is_empty() {
+            lines.push(line);
+        }
 
         // Обробляємо кожен рядок з вирівнюванням та виправленням по ширині, якщо потрібно
         let mut y_offset = 0.0;
@@ -360,5 +368,60 @@ impl TextBuilder {
         };
 
         line.iter().map(|g| g.offset(offset, 0.0)).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::drawing::Drawing;
+    use crate::text::font::roman::Roman;
+    use crate::text::font::variant::Simplex;
+
+    use super::*;
+    use env_logger;
+    use std::fs::File;
+    use std::io::Write;
+
+    fn init_logger() {
+        let _ = env_logger::builder()
+            .is_test(true)
+            .filter_level(log::LevelFilter::Debug)
+            .try_init();
+    }
+
+    #[test]
+    fn test_create_text_with_roman_font_and_save_svg() {
+        init_logger();
+
+        // Створення тексту з шрифтом `Roman`
+        let roman_font = Roman::new()
+            .simplex()
+            .expect("Не вдалося ініціалізувати шрифт `Roman`");
+        let content = "A Z";
+
+        let text = TextBuilder::default()
+            .content(content)
+            .scale(0.5)
+            .font(roman_font)
+            .width(200.0)
+            .line_height(10.0)
+            .align(TextAlign::Center)
+            .build()
+            .expect("Не вдалося створити текст");
+
+        // Генерація SVG-документа
+        let drawing = Drawing::new(
+            (400.0, 200.0),
+            text.draw().expect("Не вдалося згенерувати шляхи"),
+        );
+        let svg_data = drawing.to_svg();
+
+        // Запис SVG у файл
+        let mut file = File::create("test_output.svg").expect("Не вдалося створити SVG файл");
+        file.write_all(svg_data.as_bytes())
+            .expect("Не вдалося записати в SVG файл");
+
+        // Перевірка наявності даних у згенерованому SVG
+        assert!(!svg_data.is_empty(), "SVG файл порожній");
     }
 }
